@@ -1,0 +1,703 @@
+<script setup>
+import { ref, computed } from 'vue'
+import { IconCopy, IconCheck } from '../icons'
+import { useToast } from '../../composables/useToast'
+import decoCloud from '../../assets/deco-cloud.svg'
+import decoBubble from '../../assets/deco-bubble.svg'
+import decoSmiley from '../../assets/deco-smiley.svg'
+import decoSparkle from '../../assets/deco-sparkle.svg'
+import decoDashedCurve from '../../assets/deco-dashed-curve.svg'
+
+const props = defineProps({
+  contentHtml: { type: String, default: '' },
+  images: { type: Array, default: () => [] },
+  userName: { type: String, default: 'ผู้ใช้' },
+  userRole: { type: String, default: '' },
+  userWorkplace: { type: String, default: '' },
+  projectLabel: { type: String, default: '' },
+  isSaving: { type: Boolean, default: false },
+  reportSaved: { type: Boolean, default: false },
+  hasTaiga: { type: Boolean, default: false },
+})
+
+const emit = defineEmits(['copy', 'save', 'postTaiga'])
+
+const { showToast } = useToast()
+
+const copySuccess = ref(false)
+const sectionCopyIdx = ref(-1)
+const polaroidCopyIdx = ref(-1)
+const flashActive = ref(false)
+
+function handleSave() {
+  flashActive.value = true
+  setTimeout(() => {
+    emit('save')
+    showToast('กำลังบันทึกรายงาน...')
+  }, 150)
+  setTimeout(() => { flashActive.value = false }, 600)
+}
+
+/* Thai Buddhist date (e.g. 27/1/2569) */
+const thaiDate = computed(() => {
+  const now = new Date()
+  const day = now.getDate()
+  const month = now.getMonth() + 1
+  const buddhistYear = now.getFullYear() + 543
+  return `${day}/${month}/${buddhistYear}`
+})
+
+const DISPLAY_POLAROID_SLOTS = 5
+const displayedPolaroids = computed(() => props.images.slice(0, DISPLAY_POLAROID_SLOTS))
+const overflowImageCount = computed(() => Math.max(0, props.images.length - DISPLAY_POLAROID_SLOTS))
+
+/* Split content into per-project sections */
+const contentSections = computed(() => {
+  if (!props.contentHtml) return []
+  // Try <hr> first
+  let sections = props.contentHtml.split(/<hr\s*\/?>/i).filter(s => s.trim())
+  if (sections.length > 1) return sections
+  // Fallback: split before each <p> that starts with "โครงการ"
+  sections = props.contentHtml.split(/(?=<p[^>]*>\s*โครงการ)/i).filter(s => s.trim())
+  return sections
+})
+
+const polaroidPositions = [
+  { top: '-30px', left: '-200px', rotate: '-8deg', tapeColor: '#FFD700' },
+  { top: '10px', right: '-200px', rotate: '5deg', tapeColor: '#64B5F6' },
+  { top: '220px', left: '-210px', rotate: '6deg', tapeColor: '#81C784' },
+  { top: '250px', right: '-190px', rotate: '-4deg', tapeColor: '#FFB74D' },
+  { bottom: '20px', left: '-180px', rotate: '8deg', tapeColor: '#CE93D8' },
+]
+
+const activePolaroids = computed(() => displayedPolaroids.value)
+
+function handleCopy() {
+  emit('copy')
+  copySuccess.value = true
+  showToast('คัดลอกทั้งหมดแล้ว')
+  setTimeout(() => { copySuccess.value = false }, 2000)
+}
+
+function htmlToPlainText(html) {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  // Convert <li> to "• " prefixed lines
+  tmp.querySelectorAll('li').forEach(li => {
+    li.textContent = '• ' + li.textContent
+  })
+  // Convert block elements to newlines
+  tmp.querySelectorAll('p, br, div, h1, h2, h3, h4, h5, h6').forEach(el => {
+    el.before('\n')
+  })
+  tmp.querySelectorAll('ol, ul').forEach(el => {
+    el.before('\n')
+  })
+  return tmp.textContent.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function copySection(html, idx) {
+  const dateLine = `งานประจำวันที่ ${thaiDate.value}`
+  const richHtml = `<p><strong>${dateLine}</strong></p>${html.trim()}`
+  const plainText = `${dateLine}\n\n${htmlToPlainText(html)}`
+
+  const blob = new Blob([richHtml], { type: 'text/html' })
+  const textBlob = new Blob([plainText], { type: 'text/plain' })
+  navigator.clipboard.write([
+    new ClipboardItem({ 'text/html': blob, 'text/plain': textBlob })
+  ])
+
+  sectionCopyIdx.value = idx
+  showToast('คัดลอกส่วนนี้แล้ว')
+  setTimeout(() => { sectionCopyIdx.value = -1 }, 1500)
+}
+
+async function copyPolaroidImage(dataUrl, idx) {
+  try {
+    const res = await fetch(dataUrl)
+    const blob = await res.blob()
+    const pngBlob = blob.type === 'image/png' ? blob : new Blob([await blob.arrayBuffer()], { type: 'image/png' })
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+    polaroidCopyIdx.value = idx
+    showToast('คัดลอกรูปภาพแล้ว')
+    setTimeout(() => { polaroidCopyIdx.value = -1 }, 1500)
+  } catch {
+    // Fallback: copy data URL as text
+    await navigator.clipboard.writeText(dataUrl)
+    polaroidCopyIdx.value = idx
+    showToast('คัดลอกรูปภาพแล้ว')
+    setTimeout(() => { polaroidCopyIdx.value = -1 }, 1500)
+  }
+}
+</script>
+
+<template>
+  <div class="today-template">
+
+    <!-- Camera flash overlay -->
+    <div v-if="flashActive" class="camera-flash"></div>
+
+    <!-- Decorative background elements -->
+    <img :src="decoDashedCurve" alt="" class="deco deco-curve" />
+    <img :src="decoCloud" alt="" class="deco deco-cloud" />
+    <img :src="decoBubble" alt="" class="deco deco-bubble" />
+    <img :src="decoSmiley" alt="" class="deco deco-smiley" />
+    <img :src="decoSparkle" alt="" class="deco deco-sparkle" />
+
+    <!-- Content -->
+    <div class="today-template-content">
+      <div class="today-template-title-row">
+        <h2 class="today-template-title">เทมเพลตของวันนี้</h2>
+        <span class="today-template-badge">พร้อมแล้ว</span>
+      </div>
+
+      <div class="today-template-card-area">
+        <!-- Card + polaroids wrapper (polaroids position relative to this) -->
+        <div class="today-template-card-wrapper">
+          <!-- Decorative polaroids -->
+          <div v-for="(img, i) in activePolaroids" :key="img.id" class="today-template-polaroid"
+            :class="{ copied: polaroidCopyIdx === i }"
+            :style="{
+              top: polaroidPositions[i]?.top,
+              bottom: polaroidPositions[i]?.bottom,
+              left: polaroidPositions[i]?.left,
+              right: polaroidPositions[i]?.right,
+              transform: `rotate(${polaroidPositions[i]?.rotate || '0deg'})`
+            }"
+            @click="copyPolaroidImage(img.data, i)">
+            <div class="today-template-polaroid-tape" :style="{ background: polaroidPositions[i]?.tapeColor }"></div>
+            <img :src="img.data" alt="Screenshot" class="today-template-polaroid-img" />
+            <span class="today-template-polaroid-copy-icon">
+              <IconCheck v-if="polaroidCopyIdx === i" :size="14" color="#16A34A" />
+              <IconCopy v-else :size="14" color="#555" />
+            </span>
+          </div>
+
+          <!-- Overflow sticky note -->
+          <div v-if="overflowImageCount > 0" class="today-template-sticky-note">
+            <span>+{{ overflowImageCount }} รูปภาพ</span>
+          </div>
+
+          <!-- Summary card -->
+        <div class="today-template-card">
+          <div class="today-template-card-header">
+            <span class="today-template-card-user">{{ userName }}</span>
+            <button class="today-template-copy-btn" :class="{ copied: copySuccess }" @click="handleCopy">
+              <IconCheck v-if="copySuccess" :size="14" color="#16A34A" />
+              <IconCopy v-else :size="14" />
+              <span>{{ copySuccess ? 'คัดลอกแล้ว' : 'คัดลอกทั้งหมด' }}</span>
+            </button>
+          </div>
+          <div class="today-template-card-divider"></div>
+          <div class="today-template-card-body">
+            <!-- User template header -->
+            <div class="today-template-header-info">
+              <p v-if="projectLabel"><strong>โครงการ :</strong> {{ projectLabel }}</p>
+              <p v-if="userWorkplace"><strong>สถานที่ปฏิบัติงาน :</strong> {{ userWorkplace }}</p>
+              <p v-if="userName"><strong>ผู้ปฏิบัติงาน:</strong> {{ userName }}</p>
+              <p v-if="userRole"><strong>ตำแหน่ง:</strong> {{ userRole }}</p>
+              <p><strong>งานประจำวันที่</strong> {{ thaiDate }}</p>
+            </div>
+            <div v-if="contentSections.length" class="section-divider"></div>
+
+            <div v-for="(section, i) in contentSections" :key="i" class="today-template-section"
+              :class="{ copied: sectionCopyIdx === i }" @click="copySection(section, i)">
+              <div class="section-inner" v-html="section"></div>
+              <span class="section-copy-icon">
+                <IconCheck v-if="sectionCopyIdx === i" :size="16" color="#16A34A" />
+                <IconCopy v-else :size="16" color="#194987" />
+              </span>
+              <div v-if="i < contentSections.length - 1" class="section-divider"></div>
+            </div>
+          </div>
+
+          <!-- Bottom action bar — sticky inside card -->
+          <div class="today-template-bottom-bar">
+            <span class="today-template-bottom-label">รายงานการทำงานประจำวัน</span>
+            <div class="today-template-bottom-actions">
+              <button v-if="hasTaiga" class="today-template-taiga-btn" @click="emit('postTaiga')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span>โพสต์ Taiga</span>
+              </button>
+              <button class="today-template-save-btn" :disabled="isSaving || reportSaved" @click="handleSave">
+                <IconCheck :size="18" color="white" />
+                <span>{{ reportSaved ? 'บันทึกแล้ว' : 'บันทึกรายงานวันนี้' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.today-template {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100vh;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.today-template-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  padding: 24px 0 124px;
+  overflow: visible;
+}
+
+/* Title row */
+.today-template-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.today-template-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.today-template-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 16px;
+  background: #16A34A;
+  color: white;
+  border-radius: 9999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Card area */
+.today-template-card-area {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Card + polaroids wrapper — centered, polaroids position relative to this */
+.today-template-card-wrapper {
+  position: relative;
+  width: 520px;
+  flex: 1;
+  min-height: 0;
+  margin: 16px auto 0;
+}
+
+/* Summary card */
+.today-template-card {
+  width: 100%;
+  height: 100%;
+  background: #FFFFFF;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+  position: relative;
+}
+
+.today-template-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+
+.today-template-card-user {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e1e1e;
+}
+
+.today-template-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 8px;
+  background: white;
+  color: #555;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.today-template-copy-btn:hover {
+  border-color: #194987;
+  color: #194987;
+  background: #f0f7ff;
+}
+
+.today-template-copy-btn.copied {
+  border-color: #16A34A;
+  color: #16A34A;
+  background: #F0FDF4;
+}
+
+.today-template-card-divider {
+  height: 1px;
+  background: #e5e5e5;
+  flex-shrink: 0;
+}
+
+.today-template-card-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #1e1e1e;
+  font-family: 'Google Sans', 'Google Sans Text', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.today-template-card-body :deep(ol) {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+
+.today-template-card-body :deep(ul) {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+
+.today-template-card-body :deep(p) {
+  margin-bottom: 0.5em;
+}
+
+/* User template header info */
+.today-template-header-info p {
+  margin-bottom: 0.3em;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #1e1e1e;
+}
+
+.today-template-header-info p strong {
+  font-weight: 700;
+}
+
+/* Section-level hover — click to copy */
+.today-template-section {
+  position: relative;
+  padding: 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.today-template-section:hover {
+  background: rgba(43, 127, 255, 0.1);
+  box-shadow: 4px 4px 1px rgba(0, 101, 255, 0.5);
+}
+
+.today-template-section:active {
+  transform: scale(0.97);
+  background: rgba(43, 127, 255, 0.15);
+  box-shadow: 2px 2px 0px rgba(0, 101, 255, 0.5);
+}
+
+.today-template-section.copied {
+  background: rgba(22, 163, 74, 0.08);
+  box-shadow: 4px 4px 1px rgba(22, 163, 74, 0.4);
+}
+
+.section-copy-icon {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
+.today-template-section:hover .section-copy-icon {
+  opacity: 1;
+}
+
+.today-template-section.copied .section-copy-icon {
+  opacity: 1;
+}
+
+.section-divider {
+  height: 1px;
+  background: #e5e5e5;
+  margin-top: 12px;
+}
+
+/* Decorative polaroids */
+.today-template-polaroid {
+  position: absolute;
+  width: 150px;
+  background: white;
+  padding: 8px 8px 28px;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s ease;
+}
+
+.today-template-polaroid:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+
+.today-template-polaroid:active {
+  transform: scale(0.95) !important;
+}
+
+.today-template-polaroid.copied {
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.25);
+}
+
+.today-template-polaroid-tape {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 54px;
+  height: 18px;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+.today-template-polaroid-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid #e5e5e5;
+  border-radius: 2px;
+  display: block;
+}
+
+.today-template-polaroid-copy-icon {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.today-template-polaroid:hover .today-template-polaroid-copy-icon {
+  opacity: 1;
+}
+
+.today-template-polaroid.copied .today-template-polaroid-copy-icon {
+  opacity: 1;
+}
+
+/* Overflow sticky note */
+.today-template-sticky-note {
+  position: absolute;
+  bottom: 30px;
+  right: -220px;
+  width: 110px;
+  padding: 16px 12px;
+  background: #FEF3C7;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: rotate(3deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #DC2626;
+  z-index: 1;
+}
+
+/* Bottom action bar — sticky inside card */
+.today-template-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid #e5e5e5;
+  border-radius: 0 0 16px 16px;
+  flex-shrink: 0;
+}
+
+.today-template-bottom-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.today-template-bottom-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.today-template-taiga-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #194987;
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.today-template-taiga-btn:hover {
+  background: #0f3260;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(25, 73, 135, 0.3);
+}
+
+.today-template-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: #16A34A;
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.today-template-save-btn:hover {
+  background: #15803D;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+.today-template-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Decorative background elements */
+.deco {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.deco-curve {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0.7;
+}
+
+.deco-cloud {
+  bottom: 40px;
+  left: 24px;
+  width: 140px;
+  opacity: 0.85;
+}
+
+.deco-bubble {
+  top: 80px;
+  right: 24px;
+  width: 140px;
+  opacity: 0.85;
+}
+
+.deco-smiley {
+  top: 120px;
+  left: 40px;
+  width: 70px;
+  opacity: 0.8;
+}
+
+.deco-sparkle {
+  bottom: 60px;
+  right: 40px;
+  width: 100px;
+  opacity: 0.7;
+}
+
+/* Camera flash effect */
+.camera-flash {
+  position: fixed;
+  inset: 0;
+  background: white;
+  z-index: 9999;
+  animation: flash-burst 0.5s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes flash-burst {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Responsive: hide decorative elements on narrow screens */
+@media (max-width: 1000px) {
+
+  .today-template-polaroid,
+  .today-template-sticky-note,
+  .deco {
+    display: none;
+  }
+}
+</style>
