@@ -1,56 +1,142 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import BaseHeader from '../components/ui/BaseHeader.vue'
+import { useTaiga } from '../composables/useTaiga'
+import { useAI } from '../composables/useAI'
+import { useToast } from '../composables/useToast'
+import BaseInput from '../components/ui/BaseInput.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import ImportModal from '../components/ImportModal.vue'
+
+const { showToast } = useToast()
 
 const router = useRouter()
 const showImportModal = ref(false)
 
-function navigateToOnboarding() {
+const { login: taigaLogin, getUserProjects } = useTaiga()
+const { getProxyUrl, setProxyUrl } = useAI()
+
+const defaultProxyUrl = import.meta.env.VITE_PROXY_URL || getProxyUrl() || ''
+const taigaBaseUrl = ref(import.meta.env.VITE_TAIGA_BASE_URL || '')
+const savedUsername = localStorage.getItem('hurryup_remember_user') || ''
+const taigaUsername = ref(savedUsername)
+const taigaPassword = ref('')
+const rememberMe = ref(!!savedUsername)
+const loginState = ref('idle')
+const loginError = ref('')
+
+async function handleTaigaLogin() {
+  const proxy = defaultProxyUrl
+  const base = taigaBaseUrl.value.trim()
+  const user = taigaUsername.value.trim()
+  const pass = taigaPassword.value
+
+  if (!proxy) {
+    loginError.value = 'ยังไม่ได้ตั้งค่า Proxy URL'
+    return
+  }
+  if (!user || !pass) {
+    loginError.value = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'
+    return
+  }
+
+  setProxyUrl(proxy)
+  loginState.value = 'loading'
+  loginError.value = ''
+
+  if (rememberMe.value) {
+    localStorage.setItem('hurryup_remember_user', user)
+  } else {
+    localStorage.removeItem('hurryup_remember_user')
+  }
+
+  const result = await taigaLogin(proxy, base, user, pass)
+  if (!result.success) {
+    loginState.value = 'idle'
+    loginError.value = result.error || 'เชื่อมต่อไม่สำเร็จ'
+    return
+  }
+
+  // Fetch projects before navigating
+  try {
+    const projectsData = await getUserProjects(proxy)
+    console.log('Taiga projects:', projectsData)
+    // Store in sessionStorage so OnboardingPage can pick them up
+    sessionStorage.setItem('hurryup_fetched_projects', JSON.stringify(projectsData || []))
+    sessionStorage.setItem('hurryup_login_name', result.fullName || '')
+  } catch (err) {
+    console.error('Failed to fetch projects:', err)
+    sessionStorage.setItem('hurryup_fetched_projects', '[]')
+    sessionStorage.setItem('hurryup_login_name', result.fullName || '')
+  }
+
+  loginState.value = 'idle'
+  showToast('เข้าสู่ระบบสำเร็จ', 3000, 'success')
   router.push('/onboarding')
 }
 </script>
 
 <template>
-  <div class="min-h-screen bg-white">
-    <!-- Header -->
-    <BaseHeader :show-border="false">
-      <template #actions>
-        <BaseButton size="sm" @click="navigateToOnboarding">
-          เริ่มต้นใช้งาน
-        </BaseButton>
-      </template>
-    </BaseHeader>
+  <div class="min-h-screen flex bg-gray-50">
 
-    <!-- Hero Section -->
-    <main class="flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 px-8 md:px-16 lg:px-24 py-16 lg:py-24 max-w-7xl mx-auto">
-      <!-- Left - Illustration -->
-      <div class="w-full max-w-md lg:max-w-lg flex-shrink-0">
-        <img src="../assets/landing-hero.svg" alt="Landing Illustration" class="w-full h-auto">
-      </div>
-
-      <!-- Right - Content -->
-      <div class="flex-1 max-w-lg text-center lg:text-left pb-24">
-        <h1 class="text-4xl lg:text-5xl font-bold text-[#194987] leading-tight mb-6">
-          รายงานประจำวัน<br>ง่ายๆ แค่ไม่กี่คลิก
-        </h1>
-        <p class="text-base lg:text-lg text-gray-500 leading-relaxed mb-8">
-          สร้างรายงานการทำงานประจำวันได้อย่างรวดเร็ว เลือกโครงการ เพิ่มรายละเอียด แล้วคัดลอกไปโพสต์ในบล็อกได้ทันที
+    <!-- Left Column: Login Form -->
+    <div class="w-full lg:w-1/2 flex flex-col justify-center bg-white px-8 sm:px-16 lg:px-20 xl:px-28 py-12">
+      <div
+        class="w-full max-w-[480px] mx-auto animate-[landingSlideIn_0.5s_ease-out_0.1s_forwards] opacity-0 translate-y-[30px]">
+        <h1 class="text-4xl sm:text-5xl font-bold text-[var(--primary-brand)] mb-3">ยินดีต้อนรับ</h1>
+        <p class="text-[var(--secondary-text)] text-base mb-10">
+          ทำให้การบันทึกรายงานประจำวันเป็นเรื่องง่ายด้วย <strong class="text-[var(--primary-brand)]">BMS Snap</strong>
+          เข้าสู่ระบบโดยอีเมลบริษัท
         </p>
-        <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-          <BaseButton size="lg" @click="navigateToOnboarding">
-            เริ่มต้นใช้งาน
+
+        <div class="space-y-5">
+          <!-- Username -->
+          <BaseInput v-model="taigaUsername" placeholder="username@bms-hosxp.com" :disabled="loginState === 'loading'" />
+
+          <!-- Password -->
+          <BaseInput v-model="taigaPassword" type="password" placeholder="รหัสผ่านอีเมลบริษัท" :disabled="loginState === 'loading'" @keydown.enter="handleTaigaLogin" />
+
+          <!-- Remember me -->
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" class="checkbox checkbox-sm checkbox-primary" v-model="rememberMe">
+            <span class="text-sm text-[var(--secondary-text)]">จำฉันไว้</span>
+          </label>
+
+          <!-- Login error -->
+          <p v-if="loginError" class="text-red-500 text-sm">{{ loginError }}</p>
+
+          <!-- Login button -->
+          <BaseButton variant="primary" size="lg" class="!w-full" :disabled="loginState === 'loading'" @click="handleTaigaLogin">
+            <span v-if="loginState === 'loading'" class="loading loading-spinner loading-sm"></span>
+            {{ loginState === 'loading' ? 'กำลังเชื่อมต่อ...' : 'Login' }}
           </BaseButton>
-          <BaseButton variant="outline" size="lg" @click="showImportModal = true">
-            มีบัญชีอยู่แล้ว
-          </BaseButton>
+
         </div>
       </div>
-    </main>
+    </div>
+
+    <!-- Right Column: Illustration -->
+    <div class="hidden lg:flex w-1/2 p-6 bg-white">
+      <div class="w-full h-full rounded-3xl flex items-center justify-center">
+        <img src="../assets/landing-hero.svg" alt="BMS Snap Illustration" class="w-[80%] max-w-[480px] h-auto">
+      </div>
+    </div>
 
     <!-- Import Modal -->
     <ImportModal :show="showImportModal" @close="showImportModal = false" />
   </div>
 </template>
+
+<style>
+@keyframes landingSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>

@@ -427,7 +427,7 @@ onUnmounted(() => {
             <h2 class="daily-flow-title">{{ currentStep === 2 ? 'รายละเอียดงานที่คุณทำวันนี้' : 'เลือกโครงการที่คุณทำวันนี้' }}</h2>
 
             <!-- Step 1: Select Projects -->
-            <div v-if="currentStep === 1" class="daily-flow-content">
+            <div v-if="currentStep === 1" class="daily-flow-content daily-flow-content-scroll">
               <p class="daily-flow-subtitle">เลือกได้มากกว่า 1 รายการ</p>
 
               <div class="daily-flow-chips">
@@ -653,6 +653,14 @@ onUnmounted(() => {
   overflow-x: hidden;
 }
 
+.daily-flow-content-scroll {
+  position: relative;
+  mask-image: linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 /* Step transition — fade in from bottom */
 .step-fade-enter-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -687,9 +695,7 @@ onUnmounted(() => {
 }
 
 .daily-flow-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-block;
   padding: 10px 20px;
   border-radius: 9999px;
   font-size: 0.95rem;

@@ -19,6 +19,12 @@
   --surface: #f5f5f5;
 }
 
+/* Override DaisyUI checkbox-primary to use brand color */
+.checkbox-primary {
+  --input-color: var(--primary-brand) !important;
+  color: white !important;
+}
+
 /* Removed global reset - Tailwind's preflight handles this */
 
 html {
