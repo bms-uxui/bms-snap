@@ -204,6 +204,14 @@ export function useSupabase() {
     if (error) throw error
   }
 
+  async function getAllReports() {
+    const { data, error } = await supabase
+      .from('reports')
+      .select('user_id, date_key, project_ids, project_names')
+    if (error) throw error
+    return data || []
+  }
+
   async function deleteAllReports() {
     if (!user.value) return
     await supabase.from('reports').delete().eq('user_id', user.value.id)
@@ -292,6 +300,7 @@ export function useSupabase() {
     getUserReportLogs,
     getAllReportLogs,
     getReports,
+    getAllReports,
     upsertReport,
     deleteAllReports,
     getAllStamps,

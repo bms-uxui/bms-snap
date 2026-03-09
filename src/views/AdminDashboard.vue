@@ -30,13 +30,14 @@ ChartJS.register(
 const router = useRouter()
 const { showToast } = useToast()
 const { thaiMonthsShort, formatThaiDate } = useDateTime()
-const { isAdmin, getAllUsers, getUserProjects, getUserStamps, getAllStamps, getAllProjects, getAllReportLogs, adminDeleteUser } = useSupabase()
+const { isAdmin, getAllUsers, getUserProjects, getUserStamps, getAllStamps, getAllProjects, getAllReportLogs, getAllReports, adminDeleteUser } = useSupabase()
 
 const loading = ref(true)
 const users = ref([])
 const allStamps = ref([])
 const allProjects = ref([])
 const allReportLogs = ref([])
+const allReports = ref([])
 const expandedUser = ref(null)
 const userDetails = ref({})
 const showDeleteConfirm = ref(false)
@@ -62,16 +63,18 @@ onMounted(async () => {
 async function loadData() {
   loading.value = true
   try {
-    const [usersData, stampsData, projectsData, reportLogsData] = await Promise.all([
+    const [usersData, stampsData, projectsData, reportLogsData, reportsData] = await Promise.all([
       getAllUsers(),
       getAllStamps(),
       getAllProjects(),
       getAllReportLogs(),
+      getAllReports(),
     ])
     users.value = usersData
     allStamps.value = stampsData
     allProjects.value = projectsData
     allReportLogs.value = reportLogsData
+    allReports.value = reportsData
   } catch (e) {
     showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message)
   }
@@ -386,20 +389,13 @@ const projectTreemapData = computed(() => {
   const today = new Date()
   const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`
 
-  // Find user_ids who contributed today
-  const todayUserIds = new Set(
-    allReportLogs.value
-      .filter(r => r.date_key === todayKey)
-      .map(r => r.user_id)
-  )
-
-  if (todayUserIds.size === 0) return []
-
-  // Count projects from today's contributors
+  // Count from actual selected projects in today's reports
   const counts = {}
-  for (const p of allProjects.value) {
-    if (todayUserIds.has(p.user_id)) {
-      counts[p.name] = (counts[p.name] || 0) + 1
+  for (const r of allReports.value) {
+    if (r.date_key !== todayKey) continue
+    const names = r.project_names || []
+    for (const name of names) {
+      if (name) counts[name] = (counts[name] || 0) + 1
     }
   }
 
