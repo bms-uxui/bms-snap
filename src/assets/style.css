@@ -2171,6 +2171,123 @@ body {
     flex-shrink: 0;
 }
 
+.taiga-picker {
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.taiga-picker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #f5f8fc;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    font-size: 13px;
+    font-weight: 500;
+    color: #194987;
+}
+
+.taiga-picker-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    color: var(--secondary-text, #666);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.taiga-picker-close:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.taiga-picker-list {
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.taiga-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    background: #fff;
+    border: none;
+    border-bottom: 1px solid #f0f2f5;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s;
+}
+
+.taiga-picker-item:last-child {
+    border-bottom: none;
+}
+
+.taiga-picker-item:hover:not(:disabled) {
+    background: #f0f7ff;
+}
+
+.taiga-picker-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.taiga-picker-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--surface, #f5f5f5);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.taiga-picker-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.taiga-picker-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.taiga-picker-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--primary-text, #1a1a1a);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.taiga-picker-slug {
+    font-size: 11px;
+    color: var(--secondary-text, #666);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.taiga-picker-added {
+    font-size: 11px;
+    color: #4CAF50;
+    background: #e8f5e9;
+    padding: 2px 8px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
 .summary-section {
     display: none;
     padding-top: 24px;

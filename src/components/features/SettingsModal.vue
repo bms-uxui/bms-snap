@@ -30,7 +30,7 @@ const { showToast } = useToast()
 const { handleProfileImage: processProfileImage } = useImages()
 const { stripHtml, downloadFile } = useUtils()
 const { getProxyUrl, setProxyUrl } = useAI()
-const { isAuthenticated: isTaigaAuthenticated, getCredentials: getTaigaCredentials, login: taigaLogin, logout: taigaLogout, isLoading: taigaLoading, taigaError } = useTaiga()
+const { isAuthenticated: isTaigaAuthenticated, getCredentials: getTaigaCredentials, login: taigaLogin, logout: taigaLogout, isLoading: taigaLoading, taigaError, getUserProjects: fetchTaigaUserProjects } = useTaiga()
 const { deleteAccount, user: supabaseUser } = useSupabase()
 
 const activeTab = ref('personal')
@@ -60,6 +60,11 @@ const editingProjectId = ref(null)
 const newProjectName = ref('')
 const newProjectUrl = ref('')
 const newProjectTemplate = ref('')
+
+// Fetch Taiga projects picker
+const taigaProjectsList = ref([])
+const taigaProjectsLoading = ref(false)
+const showTaigaPicker = ref(false)
 
 // Quill options
 const toolbarOptions = [
@@ -263,6 +268,56 @@ function saveProject() {
   resetProjectForm()
 }
 
+async function fetchCurrentTaigaProjects() {
+  if (!isTaigaAuthenticated()) {
+    showToast('กรุณาเชื่อมต่อ Taiga ก่อนในแท็บ Taiga')
+    return
+  }
+  const proxyUrl = getProxyUrl()
+  if (!proxyUrl) {
+    showToast('กรุณาตั้งค่า AI Proxy URL ก่อน')
+    return
+  }
+
+  taigaProjectsLoading.value = true
+  try {
+    const data = await fetchTaigaUserProjects(proxyUrl)
+    taigaProjectsList.value = (data || []).sort((a, b) =>
+      new Date(b.created_date) - new Date(a.created_date)
+    )
+    showTaigaPicker.value = true
+    if (taigaProjectsList.value.length === 0) {
+      showToast('ไม่พบโครงการใน Taiga')
+    }
+  } catch (e) {
+    showToast('ดึงโครงการไม่สำเร็จ: ' + e.message)
+  } finally {
+    taigaProjectsLoading.value = false
+  }
+}
+
+function selectTaigaProject(p) {
+  const creds = getTaigaCredentials()
+  const baseUrl = creds?.baseUrl || ''
+  newProjectName.value = p.name
+  newProjectUrl.value = baseUrl && p.slug ? `${baseUrl}/project/${p.slug}/` : ''
+  if (!newProjectTemplate.value) {
+    newProjectTemplate.value = store.DEFAULT_TEMPLATE
+  }
+  showTaigaPicker.value = false
+  nextTick(() => {
+    document.getElementById('projectFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function isTaigaProjectAlreadyAdded(p) {
+  const creds = getTaigaCredentials()
+  const baseUrl = creds?.baseUrl || ''
+  if (!baseUrl || !p.slug) return false
+  const expectedUrl = `${baseUrl}/project/${p.slug}/`
+  return store.projects.some(proj => (proj.taigaUrl || '').replace(/\/+$/, '') === expectedUrl.replace(/\/+$/, ''))
+}
+
 function deleteProject(project) {
   if (confirm(`ต้องการลบโครงการ "${project.name}" หรือไม่?`)) {
     store.deleteProject(project.id)
@@ -463,9 +518,53 @@ function saveCurrentTab() {
               </div>
 
               <div id="projectFormSection">
-                <h4 style="font-size: 14px; margin-bottom: 12px;">
-                  {{ editingProjectId ? 'แก้ไขโครงการ' : 'เพิ่มโครงการใหม่' }}
-                </h4>
+                <div class="flex items-center justify-between" style="margin-bottom: 12px;">
+                  <h4 style="font-size: 14px;">
+                    {{ editingProjectId ? 'แก้ไขโครงการ' : 'เพิ่มโครงการใหม่' }}
+                  </h4>
+                  <BaseButton
+                    v-if="!editingProjectId"
+                    variant="outline"
+                    size="sm"
+                    :disabled="taigaProjectsLoading"
+                    @click="fetchCurrentTaigaProjects"
+                  >
+                    {{ taigaProjectsLoading ? 'กำลังดึง...' : 'ดึงโครงการจาก Taiga' }}
+                  </BaseButton>
+                </div>
+
+                <div v-if="showTaigaPicker && taigaProjectsList.length > 0" class="taiga-picker">
+                  <div class="taiga-picker-header">
+                    <span>เลือกโครงการเพื่อเติมข้อมูลในฟอร์ม</span>
+                    <button class="taiga-picker-close" @click="showTaigaPicker = false" aria-label="ปิด">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="taiga-picker-list">
+                    <button
+                      v-for="p in taigaProjectsList"
+                      :key="p.id"
+                      type="button"
+                      class="taiga-picker-item"
+                      :disabled="isTaigaProjectAlreadyAdded(p)"
+                      @click="selectTaigaProject(p)"
+                    >
+                      <div class="taiga-picker-logo">
+                        <img v-if="p.logo_big_url || p.logo_small_url" :src="p.logo_big_url || p.logo_small_url" :alt="p.name">
+                        <IconFolderOpen v-else size="14" color="var(--secondary-text)" />
+                      </div>
+                      <div class="taiga-picker-info">
+                        <div class="taiga-picker-name">{{ p.name }}</div>
+                        <div class="taiga-picker-slug">{{ p.slug }}</div>
+                      </div>
+                      <span v-if="isTaigaProjectAlreadyAdded(p)" class="taiga-picker-added">เพิ่มแล้ว</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div class="form-group">
                   <label class="form-label">ชื่อโครงการ</label>
                   <BaseInput v-model="newProjectName" placeholder="เช่น BMS DesignKit">
