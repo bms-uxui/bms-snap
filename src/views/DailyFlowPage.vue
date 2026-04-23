@@ -526,9 +526,59 @@ function onClickOutsideConfirm(e) {
   }
 }
 
+async function backfillTaigaMetaIfNeeded() {
+  if (!isTaigaAuthenticated()) return
+  const proxyUrl = getProxyUrl()
+  if (!proxyUrl) return
+
+  const creds = getTaigaCredentials()
+  const baseUrl = creds?.baseUrl || ''
+  if (!baseUrl) return
+
+  const taigaProjects = store.projects.filter(p => {
+    const url = (p.taigaUrl || '').replace(/\/+$/, '').toLowerCase()
+    return url.startsWith(baseUrl.replace(/\/+$/, '').toLowerCase())
+  })
+  const needsBackfill = taigaProjects.some(p => {
+    const meta = store.getProjectMeta(p.taigaUrl)
+    return !meta || !meta.logoUrl
+  })
+  if (!needsBackfill) return
+
+  try {
+    const data = await fetchTaigaUserProjects(proxyUrl)
+    for (const p of (data || [])) {
+      if (!p.slug) continue
+      const url = `${baseUrl}/project/${p.slug}/`
+      const existing = store.projects.find(proj =>
+        (proj.taigaUrl || '').replace(/\/+$/, '').toLowerCase() === url.replace(/\/+$/, '').toLowerCase()
+      )
+      if (existing) {
+        store.setProjectMeta(url, {
+          logoUrl: p.logo_big_url || p.logo_small_url || '',
+          description: p.description || '',
+          slug: p.slug || '',
+          ownerName: p.owner_extra_info?.full_name_display
+            || p.owner_extra_info?.username
+            || p.owner?.full_name_display
+            || p.owner?.username
+            || '',
+          memberCount: p.total_memberships
+            ?? p.total_memberships_active
+            ?? (Array.isArray(p.members) ? p.members.length : null),
+          createdDate: p.created_date || '',
+        })
+      }
+    }
+  } catch (e) {
+    console.warn('[Taiga] backfill skipped:', e.message)
+  }
+}
+
 onMounted(() => {
   document.addEventListener('paste', handleImagePaste, true)
   document.addEventListener('keydown', handleKeyDown)
+  backfillTaigaMetaIfNeeded()
   document.addEventListener('click', onClickOutsideConfirm, true)
 })
 
