@@ -14,6 +14,7 @@ export const useAppStore = defineStore('app', () => {
   })
 
   const projects = ref([])
+  const projectMeta = ref({})
   const selectedProjects = ref([])
   const reports = ref([])
   const lastReportDate = ref(null)
@@ -59,6 +60,7 @@ export const useAppStore = defineStore('app', () => {
           parsed.morningTemplate = '{name}\nงานประจำวันที่ {date}\n- '
         }
         projects.value = parsed.projects || []
+        projectMeta.value = parsed.projectMeta || {}
         selectedProjects.value = parsed.selectedProjects || []
         reports.value = parsed.reports || []
         lastReportDate.value = parsed.lastReportDate || null
@@ -76,6 +78,7 @@ export const useAppStore = defineStore('app', () => {
       const data = {
         user: user.value,
         projects: projects.value,
+        projectMeta: projectMeta.value,
         selectedProjects: selectedProjects.value,
         reports: reports.value,
         lastReportDate: lastReportDate.value,
@@ -328,6 +331,29 @@ export const useAppStore = defineStore('app', () => {
     await loadFromSupabase()
   }
 
+  function normalizeTaigaUrl(url) {
+    return (url || '').replace(/\/+$/, '').toLowerCase()
+  }
+
+  function getProjectMeta(taigaUrl) {
+    const key = normalizeTaigaUrl(taigaUrl)
+    if (!key) return null
+    return projectMeta.value[key] || null
+  }
+
+  function setProjectMeta(taigaUrl, meta) {
+    const key = normalizeTaigaUrl(taigaUrl)
+    if (!key || !meta) return
+    projectMeta.value = {
+      ...projectMeta.value,
+      [key]: {
+        ...(projectMeta.value[key] || {}),
+        ...meta,
+      },
+    }
+    saveData()
+  }
+
   async function addProject(project) {
     const newId = projects.value.length > 0
       ? Math.max(...projects.value.map(p => p.id)) + 1
@@ -338,6 +364,17 @@ export const useAppStore = defineStore('app', () => {
       taigaUrl: project.taigaUrl || '',
       template: project.template || DEFAULT_TEMPLATE
     })
+    if (project.taigaUrl && (project.logoUrl || project.description || project.slug)) {
+      const key = normalizeTaigaUrl(project.taigaUrl)
+      projectMeta.value = {
+        ...projectMeta.value,
+        [key]: {
+          logoUrl: project.logoUrl || '',
+          description: project.description || '',
+          slug: project.slug || '',
+        },
+      }
+    }
     saveData()
     syncProjectsToSupabase()
     return newId
@@ -406,11 +443,24 @@ export const useAppStore = defineStore('app', () => {
 
   async function completeOnboarding(userData, projectsList) {
     user.value = { ...user.value, ...userData }
-    projects.value = projectsList.map((p, index) => ({
-      ...p,
-      id: p.id || index + 1,
-      template: p.template || DEFAULT_TEMPLATE
-    }))
+    const nextMeta = { ...projectMeta.value }
+    projects.value = projectsList.map((p, index) => {
+      if (p.taigaUrl && (p.logoUrl || p.description || p.slug)) {
+        const key = normalizeTaigaUrl(p.taigaUrl)
+        nextMeta[key] = {
+          logoUrl: p.logoUrl || '',
+          description: p.description || '',
+          slug: p.slug || '',
+        }
+      }
+      return {
+        id: p.id || index + 1,
+        name: p.name,
+        taigaUrl: p.taigaUrl || '',
+        template: p.template || DEFAULT_TEMPLATE,
+      }
+    })
+    projectMeta.value = nextMeta
     onboardingComplete.value = true
     saveData()
     await syncAllToSupabase()
@@ -573,6 +623,7 @@ export const useAppStore = defineStore('app', () => {
     // State
     user,
     projects,
+    projectMeta,
     selectedProjects,
     reports,
     lastReportDate,
@@ -594,6 +645,8 @@ export const useAppStore = defineStore('app', () => {
     addProject,
     updateProject,
     deleteProject,
+    getProjectMeta,
+    setProjectMeta,
     toggleProject,
     clearSelectedProjects,
     addReport,

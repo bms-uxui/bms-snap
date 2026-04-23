@@ -65,6 +65,7 @@ const newProjectTemplate = ref('')
 const taigaProjectsList = ref([])
 const taigaProjectsLoading = ref(false)
 const showTaigaPicker = ref(false)
+const pickedTaigaMeta = ref(null)
 
 // Quill options
 const toolbarOptions = [
@@ -231,6 +232,7 @@ function resetProjectForm() {
   newProjectName.value = ''
   newProjectUrl.value = ''
   newProjectTemplate.value = ''
+  pickedTaigaMeta.value = null
 }
 
 function editProject(project) {
@@ -259,9 +261,17 @@ function saveProject() {
 
   if (editingProjectId.value !== null) {
     store.updateProject(editingProjectId.value, { name, taigaUrl: url, template })
+    if (url && pickedTaigaMeta.value) {
+      store.setProjectMeta(url, pickedTaigaMeta.value)
+    }
     showToast(`แก้ไขโครงการ "${name}" แล้ว`)
   } else {
-    store.addProject({ name, taigaUrl: url, template })
+    store.addProject({
+      name,
+      taigaUrl: url,
+      template,
+      ...(pickedTaigaMeta.value || {}),
+    })
     showToast(`เพิ่มโครงการ "${name}" แล้ว`)
   }
 
@@ -303,6 +313,11 @@ function selectTaigaProject(p) {
   newProjectUrl.value = baseUrl && p.slug ? `${baseUrl}/project/${p.slug}/` : ''
   if (!newProjectTemplate.value) {
     newProjectTemplate.value = store.DEFAULT_TEMPLATE
+  }
+  pickedTaigaMeta.value = {
+    logoUrl: p.logo_big_url || p.logo_small_url || '',
+    description: p.description || '',
+    slug: p.slug || '',
   }
   showTaigaPicker.value = false
   nextTick(() => {

@@ -270,6 +270,9 @@ const projects = computed(() => {
       name: p.name,
       taigaUrl: `${taigaBaseUrl}/project/${p.slug}/`,
       template: store.DEFAULT_TEMPLATE,
+      logoUrl: p.logo_big_url || p.logo_small_url || '',
+      description: p.description || '',
+      slug: p.slug || '',
     }))
 })
 

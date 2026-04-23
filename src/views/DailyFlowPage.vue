@@ -3,9 +3,11 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useToast } from '../composables/useToast'
+import { useTaiga } from '../composables/useTaiga'
+import { useAI } from '../composables/useAI'
 import BaseHeader from '../components/ui/BaseHeader.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
-import { IconUser, IconChevronDown } from '../components/icons'
+import { IconUser, IconChevronDown, IconFolderOpen } from '../components/icons'
 import PhysicsPills from '../components/features/PhysicsPills.vue'
 import FloatingPolaroids from '../components/features/FloatingPolaroids.vue'
 import FallingLetters from '../components/features/FallingLetters.vue'
@@ -16,9 +18,17 @@ import polaroidBottomSvg from '../assets/polaroid-bottom.svg'
 const router = useRouter()
 const store = useAppStore()
 const { showToast } = useToast()
+const { isAuthenticated: isTaigaAuthenticated, getCredentials: getTaigaCredentials, getUserProjects: fetchTaigaUserProjects } = useTaiga()
+const { getProxyUrl } = useAI()
 
 const currentStep = ref(1)
 const selectedProjectIds = ref([])
+const activeProjectTab = ref('recent')
+
+// Fetch Taiga projects picker
+const taigaProjectsList = ref([])
+const taigaProjectsLoading = ref(false)
+const showTaigaPicker = ref(false)
 
 // Editor
 const MAX_EDITOR_CHARS = 1000
@@ -66,23 +76,216 @@ function isSelected(id) {
   return selectedProjectIds.value.includes(id)
 }
 
-// Top 3 most selected projects from last 7 days
-const frequentProjectIds = computed(() => {
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const counts = {}
-  for (const r of store.reports) {
-    if (new Date(r.date) < sevenDaysAgo) continue
+function findLocalProjectForTaiga(p) {
+  const creds = getTaigaCredentials()
+  const baseUrl = creds?.baseUrl || ''
+  if (!baseUrl || !p.slug) return null
+  const expectedUrl = `${baseUrl}/project/${p.slug}/`.replace(/\/+$/, '')
+  return store.projects.find(proj => (proj.taigaUrl || '').replace(/\/+$/, '') === expectedUrl) || null
+}
+
+async function fetchCurrentTaigaProjects() {
+  if (!isTaigaAuthenticated()) {
+    showToast('กรุณาเชื่อมต่อ Taiga ก่อนในหน้าตั้งค่า')
+    return
+  }
+  const proxyUrl = getProxyUrl()
+  if (!proxyUrl) {
+    showToast('กรุณาตั้งค่า AI Proxy URL ก่อน')
+    return
+  }
+
+  if (showTaigaPicker.value) {
+    showTaigaPicker.value = false
+    return
+  }
+
+  taigaProjectsLoading.value = true
+  try {
+    const data = await fetchTaigaUserProjects(proxyUrl)
+    taigaProjectsList.value = (data || []).sort((a, b) =>
+      new Date(b.created_date) - new Date(a.created_date)
+    )
+    showTaigaPicker.value = true
+
+    console.log('[Taiga] fetched projects:', taigaProjectsList.value.map(p => ({
+      name: p.name,
+      slug: p.slug,
+      logo_big_url: p.logo_big_url,
+      logo_small_url: p.logo_small_url,
+      total_memberships: p.total_memberships,
+      owner: p.owner,
+      owner_extra_info: p.owner_extra_info,
+    })))
+    if (taigaProjectsList.value[0]) {
+      console.log('[Taiga] full first project keys:', Object.keys(taigaProjectsList.value[0]))
+      console.log('[Taiga] full first project:', taigaProjectsList.value[0])
+    }
+
+    const creds = getTaigaCredentials()
+    const baseUrl = creds?.baseUrl || ''
+    console.log('[Taiga] baseUrl:', baseUrl)
+    console.log('[Taiga] local projects:', store.projects.map(p => ({ id: p.id, name: p.name, taigaUrl: p.taigaUrl })))
+    for (const p of taigaProjectsList.value) {
+      if (!p.slug || !baseUrl) continue
+      const url = `${baseUrl}/project/${p.slug}/`
+      const existing = store.projects.find(proj =>
+        (proj.taigaUrl || '').replace(/\/+$/, '').toLowerCase() === url.replace(/\/+$/, '').toLowerCase()
+      )
+      if (existing) {
+        console.log('[Taiga] matched existing project:', existing.name, '→ saving meta with logo:', p.logo_big_url || p.logo_small_url || '(none)')
+        store.setProjectMeta(url, {
+          logoUrl: p.logo_big_url || p.logo_small_url || '',
+          description: p.description || '',
+          slug: p.slug || '',
+          ownerName: p.owner_extra_info?.full_name_display
+            || p.owner_extra_info?.username
+            || p.owner?.full_name_display
+            || p.owner?.username
+            || '',
+          memberCount: p.total_memberships
+            ?? p.total_memberships_active
+            ?? (Array.isArray(p.members) ? p.members.length : null),
+          createdDate: p.created_date || '',
+        })
+      } else {
+        console.log('[Taiga] no local match for:', p.name, '(expected url:', url, ')')
+      }
+    }
+
+    if (taigaProjectsList.value.length === 0) {
+      showToast('ไม่พบโครงการใน Taiga')
+    }
+  } catch (e) {
+    showToast('ดึงโครงการไม่สำเร็จ: ' + e.message)
+  } finally {
+    taigaProjectsLoading.value = false
+  }
+}
+
+async function selectTaigaProject(p) {
+  const creds = getTaigaCredentials()
+  const baseUrl = creds?.baseUrl || ''
+  const taigaUrl = baseUrl && p.slug ? `${baseUrl}/project/${p.slug}/` : ''
+  const meta = {
+    logoUrl: p.logo_big_url || p.logo_small_url || '',
+    description: p.description || '',
+    slug: p.slug || '',
+    ownerName: p.owner?.full_name_display || p.owner?.username || '',
+    memberCount: p.total_memberships ?? (Array.isArray(p.members) ? p.members.length : null),
+    createdDate: p.created_date || '',
+  }
+
+  const existing = findLocalProjectForTaiga(p)
+  if (existing) {
+    if (taigaUrl) store.setProjectMeta(taigaUrl, meta)
+    toggleProject(existing.id)
+    return
+  }
+  const projectId = await store.addProject({
+    name: p.name,
+    taigaUrl,
+    template: store.DEFAULT_TEMPLATE,
+    ...meta,
+  })
+  showToast(`เพิ่มโครงการ "${p.name}" แล้ว`)
+  if (projectId != null) selectedProjectIds.value.push(projectId)
+}
+
+// Search
+const searchQuery = ref('')
+const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase())
+
+function findProjectById(id) {
+  return store.projects.find(p => String(p.id) === String(id)) || null
+}
+
+function getProjectSlug(project) {
+  if (!project?.taigaUrl) return ''
+  const match = project.taigaUrl.match(/\/project\/([^/?#]+)/)
+  return match ? match[1] : ''
+}
+
+function getProjectMetaFor(project) {
+  if (!project?.taigaUrl) return null
+  return store.getProjectMeta(project.taigaUrl)
+}
+
+function selectProjectCard(id) {
+  toggleProject(id)
+}
+
+function formatThaiDate(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+  } catch {
+    return ''
+  }
+}
+
+// Recently used — unique projects pulled from the 5 most recent reports
+const recentProjectIds = computed(() => {
+  const sorted = [...store.reports].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const seen = new Set()
+  const ordered = []
+  for (const r of sorted.slice(0, 5)) {
     for (const id of (r.projects || [])) {
-      counts[id] = (counts[id] || 0) + 1
+      const proj = findProjectById(id)
+      if (proj && !seen.has(String(proj.id))) {
+        seen.add(String(proj.id))
+        ordered.push(proj.id)
+      }
     }
   }
+  return ordered.slice(0, 5)
+})
+
+// Most contributed — top 5 most-selected in last 30 days, excluding "recent" section
+const frequentProjectIds = computed(() => {
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const counts = {}
+  for (const r of store.reports) {
+    if (new Date(r.date) < thirtyDaysAgo) continue
+    for (const id of (r.projects || [])) {
+      counts[String(id)] = (counts[String(id)] || 0) + 1
+    }
+  }
+  const recentSet = new Set(recentProjectIds.value.map(String))
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([id]) => id)
-    .filter(id => store.projects.some(p => String(p.id) === String(id)))
+    .map(([id]) => findProjectById(id)?.id)
+    .filter(id => id != null && !recentSet.has(String(id)))
+    .slice(0, 5)
 })
+
+const searchResults = computed(() => {
+  if (!normalizedQuery.value) return []
+  return store.projects.filter(p => p.name.toLowerCase().includes(normalizedQuery.value))
+})
+
+const otherProjects = computed(() => {
+  const exclude = new Set([
+    ...recentProjectIds.value.map(String),
+    ...frequentProjectIds.value.map(String),
+  ])
+  return store.projects.filter(p => !exclude.has(String(p.id)))
+})
+
+const projectTabs = computed(() => [
+  { key: 'recent', label: 'ใช้ล่าสุด', count: recentProjectIds.value.length },
+  { key: 'frequent', label: 'ใช้บ่อย 30 วัน', count: frequentProjectIds.value.length },
+  { key: 'all', label: 'ทั้งหมด', count: otherProjects.value.length },
+])
+
+watch(projectTabs, (tabs) => {
+  const current = tabs.find(t => t.key === activeProjectTab.value)
+  if (!current || current.count === 0) {
+    const firstNonEmpty = tabs.find(t => t.count > 0)
+    if (firstNonEmpty) activeProjectTab.value = firstNonEmpty.key
+  }
+}, { immediate: true })
 
 const selectedProjectPills = computed(() => {
   return selectedProjectIds.value.map(id => {
@@ -383,7 +586,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Centered content -->
-      <div class="daily-flow-center" :class="{ 'step3-center': generatingVisible, 'converging-fade': isConverging && !generatingVisible }">
+      <div class="daily-flow-center" :class="{ 'step3-center': generatingVisible, 'converging-fade': isConverging && !generatingVisible, 'step1-wide': currentStep === 1 && !generatingVisible }">
         <!-- Steps indicator (hide during generating animation) -->
         <ul v-show="!generatingVisible" class="steps steps-horizontal mb-6">
           <li class="step" :class="currentStep >= 1 ? 'step-primary' : ''">
@@ -399,37 +602,313 @@ onUnmounted(() => {
           <div :key="currentStep" class="daily-flow-step-inner">
             <h2 class="daily-flow-title">{{ currentStep === 2 ? 'รายละเอียดงานที่คุณทำวันนี้' : 'เลือกโครงการที่คุณทำวันนี้' }}</h2>
 
-            <!-- Step 1: Select Projects -->
-            <div v-if="currentStep === 1" class="daily-flow-content daily-flow-content-scroll">
+            <!-- Step 1: Select Projects (2-column layout) -->
+            <div v-if="currentStep === 1" class="daily-flow-step1">
+              <div class="daily-flow-step1-main daily-flow-content-scroll">
               <p class="daily-flow-subtitle">เลือกได้มากกว่า 1 รายการ</p>
 
-              <div v-if="frequentProjectIds.length > 0" class="daily-flow-frequent">
-                <p class="daily-flow-frequent-label">โครงการที่คุณมีส่วนร่วมล่าสุด</p>
-                <div class="daily-flow-chips">
+              <!-- Search -->
+              <div class="daily-flow-search">
+                <svg class="daily-flow-search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="ค้นหาโครงการ..."
+                  class="daily-flow-search-input"
+                />
+                <button
+                  v-if="searchQuery"
+                  type="button"
+                  class="daily-flow-search-clear"
+                  aria-label="ล้างคำค้น"
+                  @click="searchQuery = ''"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="daily-flow-taiga-trigger">
+                <button
+                  type="button"
+                  class="daily-flow-chip daily-flow-chip-add"
+                  :disabled="taigaProjectsLoading"
+                  @click="fetchCurrentTaigaProjects"
+                >
+                  {{ taigaProjectsLoading ? 'กำลังดึง...' : (showTaigaPicker ? 'ซ่อนรายการจาก Taiga' : '+ ดึงโครงการจาก Taiga') }}
+                </button>
+              </div>
+
+              <div v-if="showTaigaPicker && taigaProjectsList.length > 0" class="taiga-picker daily-flow-taiga-picker">
+                <div class="taiga-picker-header">
+                  <span>เลือกเพื่อเพิ่มและติ๊กโครงการ</span>
+                  <button class="taiga-picker-close-top" @click="showTaigaPicker = false" aria-label="ปิด">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+                <div class="taiga-picker-list">
                   <button
-                    v-for="id in frequentProjectIds"
-                    :key="'freq-' + id"
-                    class="daily-flow-chip daily-flow-chip-frequent"
-                    :class="{ 'is-selected': isSelected(store.projects.find(p => String(p.id) === String(id))?.id) }"
-                    :title="store.projects.find(p => String(p.id) === String(id))?.name"
-                    @click="toggleProject(store.projects.find(p => String(p.id) === String(id))?.id)"
+                    v-for="p in taigaProjectsList"
+                    :key="'tp-top-' + p.id"
+                    type="button"
+                    class="taiga-picker-item"
+                    @click="selectTaigaProject(p)"
                   >
-                    {{ store.projects.find(p => String(p.id) === String(id))?.name }}
+                    <div class="taiga-picker-logo">
+                      <img v-if="p.logo_big_url || p.logo_small_url" :src="p.logo_big_url || p.logo_small_url" :alt="p.name">
+                      <IconFolderOpen v-else size="14" color="var(--secondary-text)" />
+                    </div>
+                    <div class="taiga-picker-info">
+                      <div class="taiga-picker-name">{{ p.name }}</div>
+                      <div class="taiga-picker-slug">{{ p.slug }}</div>
+                    </div>
+                    <span
+                      v-if="findLocalProjectForTaiga(p) && isSelected(findLocalProjectForTaiga(p).id)"
+                      class="taiga-picker-added"
+                    >เลือกแล้ว</span>
+                    <span
+                      v-else-if="findLocalProjectForTaiga(p)"
+                      class="taiga-picker-added"
+                      style="background: #e5edf5; color: #194987;"
+                    >มีในลิสต์</span>
                   </button>
                 </div>
               </div>
 
-              <div class="daily-flow-chips">
-                <button
-                  v-for="project in store.projects"
-                  :key="project.id"
-                  class="daily-flow-chip"
-                  :class="{ 'is-selected': isSelected(project.id) }"
-                  :title="project.name"
-                  @click="toggleProject(project.id)"
-                >
-                  {{ project.name }}
-                </button>
+              <!-- Search mode -->
+              <div v-if="normalizedQuery" class="daily-flow-section">
+                <p class="daily-flow-section-label">
+                  ผลการค้นหา ({{ searchResults.length }})
+                </p>
+                <div v-if="searchResults.length === 0" class="daily-flow-empty">
+                  ไม่พบโครงการที่ตรงกับ "{{ searchQuery }}"
+                </div>
+                <div v-else class="daily-flow-cards">
+                  <button
+                    v-for="project in searchResults"
+                    :key="'search-' + project.id"
+                    type="button"
+                    class="daily-flow-card"
+                    :class="{ 'is-selected': isSelected(project.id) }"
+                    :title="project.name"
+                    @click="selectProjectCard(project.id)"
+                  >
+                    <div class="daily-flow-card-icon">
+                      <img
+                        v-if="getProjectMetaFor(project)?.logoUrl"
+                        :src="getProjectMetaFor(project).logoUrl"
+                        :alt="project.name"
+                        class="daily-flow-card-logo"
+                      />
+                      <IconFolderOpen v-else size="16" color="var(--secondary-text)" />
+                    </div>
+                    <div class="daily-flow-card-text">
+                      <div class="daily-flow-card-name">{{ project.name }}</div>
+                      <div v-if="getProjectSlug(project)" class="daily-flow-card-sub">{{ getProjectSlug(project) }}</div>
+                    </div>
+                    <span class="daily-flow-card-check" :class="{ 'is-selected': isSelected(project.id) }" aria-hidden="true">
+                      <svg v-if="isSelected(project.id)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Normal mode: tabs -->
+              <template v-else>
+                <div class="daily-flow-tabs">
+                  <button
+                    v-for="tab in projectTabs"
+                    :key="tab.key"
+                    type="button"
+                    class="daily-flow-tab"
+                    :class="{ 'is-active': activeProjectTab === tab.key, 'is-empty': tab.count === 0 }"
+                    :disabled="tab.count === 0"
+                    @click="activeProjectTab = tab.key"
+                  >
+                    {{ tab.label }}
+                    <span class="daily-flow-tab-badge">{{ tab.count }}</span>
+                  </button>
+                </div>
+
+                <div v-if="activeProjectTab === 'recent' && recentProjectIds.length > 0" class="daily-flow-section">
+                  <div class="daily-flow-cards">
+                    <button
+                      v-for="id in recentProjectIds"
+                      :key="'recent-' + id"
+                      type="button"
+                      class="daily-flow-card daily-flow-card-recent"
+                      :class="{ 'is-selected': isSelected(id) }"
+                      :title="findProjectById(id)?.name"
+                      @click="selectProjectCard(id)"
+                    >
+                      <div class="daily-flow-card-icon">
+                        <img
+                          v-if="getProjectMetaFor(findProjectById(id))?.logoUrl"
+                          :src="getProjectMetaFor(findProjectById(id)).logoUrl"
+                          :alt="findProjectById(id)?.name"
+                          class="daily-flow-card-logo"
+                        />
+                        <IconFolderOpen v-else size="16" color="var(--secondary-text)" />
+                      </div>
+                      <div class="daily-flow-card-text">
+                        <div class="daily-flow-card-name">{{ findProjectById(id)?.name }}</div>
+                        <div v-if="getProjectSlug(findProjectById(id))" class="daily-flow-card-sub">{{ getProjectSlug(findProjectById(id)) }}</div>
+                      </div>
+                      <span class="daily-flow-card-check" :class="{ 'is-selected': isSelected(id) }" aria-hidden="true">
+                        <svg v-if="isSelected(id)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="activeProjectTab === 'frequent' && frequentProjectIds.length > 0" class="daily-flow-section">
+                  <div class="daily-flow-cards">
+                    <button
+                      v-for="id in frequentProjectIds"
+                      :key="'freq-' + id"
+                      type="button"
+                      class="daily-flow-card"
+                      :class="{ 'is-selected': isSelected(id) }"
+                      :title="findProjectById(id)?.name"
+                      @click="selectProjectCard(id)"
+                    >
+                      <div class="daily-flow-card-icon">
+                        <img
+                          v-if="getProjectMetaFor(findProjectById(id))?.logoUrl"
+                          :src="getProjectMetaFor(findProjectById(id)).logoUrl"
+                          :alt="findProjectById(id)?.name"
+                          class="daily-flow-card-logo"
+                        />
+                        <IconFolderOpen v-else size="16" color="var(--secondary-text)" />
+                      </div>
+                      <div class="daily-flow-card-text">
+                        <div class="daily-flow-card-name">{{ findProjectById(id)?.name }}</div>
+                        <div v-if="getProjectSlug(findProjectById(id))" class="daily-flow-card-sub">{{ getProjectSlug(findProjectById(id)) }}</div>
+                      </div>
+                      <span class="daily-flow-card-check" :class="{ 'is-selected': isSelected(id) }" aria-hidden="true">
+                        <svg v-if="isSelected(id)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="activeProjectTab === 'all' && otherProjects.length > 0" class="daily-flow-section">
+                  <div class="daily-flow-cards">
+                    <button
+                      v-for="project in otherProjects"
+                      :key="project.id"
+                      type="button"
+                      class="daily-flow-card"
+                      :class="{ 'is-selected': isSelected(project.id) }"
+                      :title="project.name"
+                      @click="selectProjectCard(project.id)"
+                    >
+                      <div class="daily-flow-card-icon">
+                        <img
+                          v-if="getProjectMetaFor(project)?.logoUrl"
+                          :src="getProjectMetaFor(project).logoUrl"
+                          :alt="project.name"
+                          class="daily-flow-card-logo"
+                        />
+                        <IconFolderOpen v-else size="16" color="var(--secondary-text)" />
+                      </div>
+                      <div class="daily-flow-card-text">
+                        <div class="daily-flow-card-name">{{ project.name }}</div>
+                        <div v-if="getProjectSlug(project)" class="daily-flow-card-sub">{{ getProjectSlug(project) }}</div>
+                      </div>
+                      <span class="daily-flow-card-check" :class="{ 'is-selected': isSelected(project.id) }" aria-hidden="true">
+                        <svg v-if="isSelected(project.id)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </template>
+              </div>
+
+              <!-- Right-side detail panel: all selected projects -->
+              <div class="daily-flow-step1-side">
+                <div class="daily-flow-detail-header">
+                  <span class="daily-flow-detail-header-title">โครงการที่เลือก</span>
+                  <span class="daily-flow-detail-header-count">{{ selectedProjectIds.length }}</span>
+                </div>
+
+                <div v-if="selectedProjectIds.length === 0" class="daily-flow-detail-empty">
+                  <IconFolderOpen size="32" color="#cbd5e1" />
+                  <p>ยังไม่ได้เลือกโครงการ</p>
+                </div>
+
+                <div v-else class="daily-flow-detail-list">
+                  <TransitionGroup name="detail-pop">
+                    <div
+                      v-for="id in selectedProjectIds"
+                      :key="'sel-' + id"
+                      class="daily-flow-detail"
+                    >
+                      <button class="daily-flow-detail-close" @click="toggleProject(id)" aria-label="เอาออก">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                      <div class="daily-flow-detail-head">
+                        <div class="daily-flow-detail-logo">
+                          <img
+                            v-if="getProjectMetaFor(findProjectById(id))?.logoUrl"
+                            :src="getProjectMetaFor(findProjectById(id)).logoUrl"
+                            :alt="findProjectById(id)?.name"
+                          />
+                          <IconFolderOpen v-else size="18" color="var(--secondary-text)" />
+                        </div>
+                        <div class="daily-flow-detail-title">
+                          <div class="daily-flow-detail-name">{{ findProjectById(id)?.name }}</div>
+                          <div v-if="getProjectMetaFor(findProjectById(id))?.createdDate" class="daily-flow-detail-sub">
+                            สร้างเมื่อ {{ formatThaiDate(getProjectMetaFor(findProjectById(id)).createdDate) }}
+                          </div>
+                          <div v-else-if="getProjectSlug(findProjectById(id))" class="daily-flow-detail-sub">
+                            {{ getProjectSlug(findProjectById(id)) }}
+                          </div>
+                        </div>
+                      </div>
+                      <p
+                        v-if="getProjectMetaFor(findProjectById(id))?.description"
+                        class="daily-flow-detail-desc"
+                      >
+                        {{ getProjectMetaFor(findProjectById(id)).description }}
+                      </p>
+                      <div
+                        v-if="getProjectMetaFor(findProjectById(id))?.memberCount != null || getProjectMetaFor(findProjectById(id))?.ownerName"
+                        class="daily-flow-detail-stats"
+                      >
+                        <div v-if="getProjectMetaFor(findProjectById(id))?.memberCount != null" class="daily-flow-detail-stat">
+                          <div class="daily-flow-detail-stat-label">สมาชิก</div>
+                          <div class="daily-flow-detail-stat-value">{{ getProjectMetaFor(findProjectById(id)).memberCount }}</div>
+                          <div class="daily-flow-detail-stat-unit">คน</div>
+                        </div>
+                        <div v-if="getProjectMetaFor(findProjectById(id))?.ownerName" class="daily-flow-detail-stat">
+                          <div class="daily-flow-detail-stat-label">เจ้าของ</div>
+                          <div class="daily-flow-detail-stat-value daily-flow-detail-stat-name">{{ getProjectMetaFor(findProjectById(id)).ownerName }}</div>
+                          <div class="daily-flow-detail-stat-unit">Owner</div>
+                        </div>
+                      </div>
+                    </div>
+                  </TransitionGroup>
+                </div>
               </div>
             </div>
 
@@ -577,7 +1056,13 @@ onUnmounted(() => {
   padding: 48px 0 0;
   height: 100%;
   pointer-events: none;
-  transition: opacity 0.8s ease, transform 0.8s ease;
+  transition: opacity 0.8s ease, transform 0.8s ease, max-width 0.4s ease;
+}
+
+.daily-flow-center.step1-wide {
+  max-width: 1040px;
+  padding-left: 32px;
+  padding-right: 32px;
 }
 
 .daily-flow-center.converging-fade {
@@ -665,6 +1150,8 @@ onUnmounted(() => {
   justify-content: center;
   gap: 10px;
   width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
 }
 
 .daily-flow-chip {
@@ -693,31 +1180,549 @@ onUnmounted(() => {
   transform: scale(0.95);
 }
 
-.daily-flow-frequent {
+.daily-flow-search {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.daily-flow-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 36px 0 38px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9999px;
+  background: white;
+  font-size: 0.9rem;
+  color: #374151;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.daily-flow-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.daily-flow-search-input:focus {
+  border-color: var(--primary-brand, #194987);
+  box-shadow: 0 0 0 3px rgba(25, 73, 135, 0.12);
+}
+
+.daily-flow-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.daily-flow-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: #e5e7eb;
+  color: #4b5563;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.daily-flow-search-clear:hover {
+  background: #d1d5db;
+}
+
+.daily-flow-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  margin-bottom: 16px;
+  max-width: 520px;
+  margin: 0 auto;
 }
 
-.daily-flow-frequent-label {
+.daily-flow-tabs {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 4px;
+  background: #f3f4f6;
+  border-radius: 10px;
+}
+
+.daily-flow-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--secondary-text, #6b7280);
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.daily-flow-tab:hover:not(:disabled):not(.is-active) {
+  color: var(--primary-text, #1a1a1a);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.daily-flow-tab.is-active {
+  background: white;
+  color: var(--primary-brand, #194987);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.daily-flow-tab.is-empty {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.daily-flow-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.daily-flow-tab.is-active .daily-flow-tab-badge {
+  background: var(--primary-brand, #194987);
+  color: white;
+}
+
+.daily-flow-section-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #999;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.daily-flow-empty {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.daily-flow-chip-recent {
+  border-color: #194987;
+  color: #194987;
+  background: #f0f7ff;
 }
 
 .daily-flow-chip-frequent {
   border-style: dashed;
 }
 
+/* Card-style project buttons (match onboarding step 2) */
+.daily-flow-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.daily-flow-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border-color, #e5e7eb);
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.daily-flow-card:hover {
+  background: #f9fafb;
+  border-color: #cbd5e1;
+}
+
+.daily-flow-card:active {
+  transform: scale(0.995);
+}
+
+.daily-flow-card.is-selected {
+  border-color: var(--primary-brand, #194987);
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(25, 73, 135, 0.08);
+}
+
+.daily-flow-card-recent {
+  border-style: dashed;
+}
+
+.daily-flow-card-recent.is-selected {
+  border-style: solid;
+}
+
+.daily-flow-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--surface, #f5f5f5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.daily-flow-card-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Step 1 two-column layout */
+.daily-flow-step1 {
+  display: flex;
+  gap: 32px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.daily-flow-step1-main {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 4px;
+}
+
+.daily-flow-step1-side {
+  width: 380px;
+  flex-shrink: 0;
+  padding: 8px 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.daily-flow-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 10px;
+  flex-shrink: 0;
+}
+
+.daily-flow-detail-header-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--secondary-text, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.daily-flow-detail-header-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  background: var(--primary-brand, #194987);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.daily-flow-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 2px 4px 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .daily-flow-step1 { flex-direction: column; align-items: center; }
+  .daily-flow-step1-main { max-width: 560px; width: 100%; }
+  .daily-flow-step1-side { width: 100%; max-width: 520px; }
+}
+
+.daily-flow-detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  border-radius: 14px;
+  border: 1.5px dashed var(--border-color, #e5e7eb);
+  background: white;
+  color: var(--secondary-text, #6b7280);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.daily-flow-detail-stat-unit {
+  font-size: 0.65rem;
+  color: var(--secondary-text, #6b7280);
+  margin-top: 2px;
+}
+
+/* Focused project detail card */
+.daily-flow-detail {
+  position: relative;
+  width: 100%;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1.5px solid var(--primary-brand, #194987);
+  background: white;
+  box-shadow: 0 6px 20px rgba(25, 73, 135, 0.1);
+}
+
+.daily-flow-detail-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.7);
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.daily-flow-detail-close:hover {
+  background: white;
+}
+
+.daily-flow-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-right: 28px;
+}
+
+.daily-flow-detail-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid rgba(25, 73, 135, 0.12);
+}
+
+.daily-flow-detail-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.daily-flow-detail-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.daily-flow-detail-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--primary-text, #1a1a1a);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.daily-flow-detail-sub {
+  font-size: 0.72rem;
+  color: var(--secondary-text, #6b7280);
+  margin-top: 2px;
+}
+
+.daily-flow-detail-desc {
+  font-size: 0.8rem;
+  color: #374151;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.daily-flow-detail-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.daily-flow-detail-stat {
+  background: white;
+  border: 1px solid rgba(25, 73, 135, 0.08);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.daily-flow-detail-stat-label {
+  font-size: 0.65rem;
+  color: var(--secondary-text, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.daily-flow-detail-stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary-brand, #194987);
+  margin-top: 2px;
+}
+
+.daily-flow-detail-stat-name {
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.daily-flow-detail-hint {
+  font-size: 0.75rem;
+  color: var(--secondary-text, #6b7280);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.detail-pop-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.detail-pop-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.detail-pop-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+
+.detail-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.daily-flow-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.daily-flow-card-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary-text, #1a1a1a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.daily-flow-card-sub {
+  font-size: 0.75rem;
+  color: var(--secondary-text, #6b7280);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.daily-flow-card-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 2px solid #d1d5db;
+  background: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.daily-flow-card-check.is-selected {
+  background: var(--primary-brand, #194987);
+  border-color: var(--primary-brand, #194987);
+}
+
 .daily-flow-chip.is-selected {
   background: var(--primary-brand, #194987);
   border-color: var(--primary-brand, #194987);
   color: #fff;
+}
+
+.daily-flow-taiga-trigger {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.daily-flow-chip-add {
+  border-style: dashed;
+  border-color: var(--primary-brand, #194987);
+  color: var(--primary-brand, #194987);
+  background: white;
+}
+
+.daily-flow-chip-add:hover:not(:disabled) {
+  background: #f0f7ff;
+}
+
+.daily-flow-chip-add:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.daily-flow-taiga-picker {
+  margin-top: 12px;
+  width: 100%;
+  max-width: 480px;
+  align-self: center;
 }
 
 /* Steps overrides — need :deep for daisyUI internals */
