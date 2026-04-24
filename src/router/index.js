@@ -27,6 +27,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/insights',
+    name: 'insights',
+    component: () => import('../views/InsightsPage.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/morning-template',
     name: 'morning-template',
     component: () => import('../views/MorningTemplatePage.vue'),

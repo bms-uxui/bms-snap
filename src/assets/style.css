@@ -1126,6 +1126,15 @@ body {
     box-shadow: 8px 8px 0px rgba(244, 116, 81, 0.08);
 }
 
+.action-card-green {
+    background: rgba(16, 185, 129, 0.16);
+    flex: 2;
+}
+
+.action-card-green:hover {
+    box-shadow: 8px 8px 0px rgba(16, 185, 129, 0.08);
+}
+
 .action-card-content {
     display: flex;
     flex-direction: column;
@@ -1155,6 +1164,18 @@ body {
 
 .action-card-badge-orange {
     background: #F47451;
+}
+
+.action-card-badge-green {
+    background: #10b981;
+}
+
+.insights-card-decor {
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    opacity: 0.9;
+    pointer-events: none;
 }
 
 .action-card-desc {
