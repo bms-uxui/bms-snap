@@ -314,17 +314,37 @@ const avgReportsPerActiveDay = computed(() => {
 </template>
 
 <style scoped>
-/* Decorative accent in hero, right edge */
+/* Decorative accent in hero, right edge — solid rounded blocks */
 .insights-hero-decor {
   position: absolute;
   right: 240px;
+  bottom: 24px;
+  width: 200px;
+  height: 150px;
+  pointer-events: none;
+}
+
+.insights-hero-decor::before,
+.insights-hero-decor::after {
+  content: '';
+  position: absolute;
+  border-radius: 20px;
+}
+
+.insights-hero-decor::before {
+  width: 120px;
+  height: 120px;
   bottom: 0;
-  width: 22%;
-  height: 70%;
-  background-image:
-    radial-gradient(circle at 30% 30%, rgba(0, 95, 184, 0.16) 0, transparent 50%),
-    radial-gradient(circle at 70% 60%, rgba(244, 116, 81, 0.18) 0, transparent 55%);
-  filter: blur(2px);
+  right: 60px;
+  background: rgba(0, 95, 184, 0.14);
+}
+
+.insights-hero-decor::after {
+  width: 72px;
+  height: 72px;
+  top: 0;
+  right: 0;
+  background: rgba(244, 116, 81, 0.2);
 }
 
 /* ---------- Period toggle ---------- */
@@ -557,7 +577,7 @@ const avgReportsPerActiveDay = computed(() => {
 .bar {
   width: clamp(16px, 3.5vw, 32px);
   min-height: 4px;
-  background: linear-gradient(180deg, var(--primary-brand, #005FB8), #194987);
+  background: var(--primary-brand, #005FB8);
   border-radius: 8px 8px 0 0;
   transition: height 0.9s cubic-bezier(.22,.61,.36,1) 0.2s;
   position: relative;
@@ -565,7 +585,7 @@ const avgReportsPerActiveDay = computed(() => {
 }
 
 .bar-col.is-today .bar {
-  background: linear-gradient(180deg, var(--accent-4, #f47451), #d85a38);
+  background: var(--accent-4, #f47451);
   box-shadow: 0 2px 8px rgba(244, 116, 81, 0.35);
 }
 
@@ -576,9 +596,10 @@ const avgReportsPerActiveDay = computed(() => {
 }
 
 .bar-col.is-future .bar {
-  background: repeating-linear-gradient(45deg, #f5f5f5, #f5f5f5 3px, transparent 3px, transparent 6px);
-  border: 1px solid #e5e7eb;
+  background: #f5f5f5;
+  border: 1px dashed #e5e7eb;
   box-shadow: none;
+  opacity: 0.6;
 }
 
 .bar-label {
@@ -705,7 +726,7 @@ const avgReportsPerActiveDay = computed(() => {
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: 0;
-  background: linear-gradient(90deg, var(--primary-brand, #005FB8), var(--accent-5, #87CCD4));
+  background: var(--primary-brand, #005FB8);
   border-radius: 999px;
   animation: fillBar 1.1s cubic-bezier(.22,.61,.36,1) forwards;
   animation-delay: var(--reveal-delay, 0ms);
