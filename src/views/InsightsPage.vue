@@ -172,16 +172,18 @@ const avgReportsPerActiveDay = computed(() => {
     <main class="insights-shell">
       <!-- Masthead -->
       <header class="insights-head reveal" style="--delay: 0ms">
-        <div class="insights-eyebrow">
-          <span class="insights-eyebrow-dot"></span>
-          <span>Field Report · {{ periodOrdinal }}</span>
-        </div>
+        <div class="insights-head-text">
+          <div class="insights-eyebrow">
+            <span class="insights-eyebrow-dot"></span>
+            <span>Field Report · {{ periodOrdinal }}</span>
+          </div>
 
-        <h1 class="insights-title">
-          พฤติกรรม<br />
-          <span class="insights-title-accent">การทุ่มเท</span>
-        </h1>
-        <p class="insights-deck">{{ periodLabel }}</p>
+          <h1 class="insights-title">
+            พฤติกรรม<br />
+            <span class="insights-title-accent">การทุ่มเท</span>
+          </h1>
+          <p class="insights-deck">{{ periodLabel }}</p>
+        </div>
 
         <div class="insights-toggle" role="tablist">
           <button
@@ -234,6 +236,8 @@ const avgReportsPerActiveDay = computed(() => {
         </aside>
       </section>
 
+      <!-- Chart + Ranking side by side on desktop -->
+      <div class="insights-lower">
       <!-- Daily activity chart -->
       <section class="chart-section reveal" style="--delay: 240ms">
         <div class="section-head">
@@ -314,6 +318,7 @@ const avgReportsPerActiveDay = computed(() => {
           </li>
         </ol>
       </section>
+      </div>
     </main>
   </div>
 </template>
@@ -353,9 +358,13 @@ const avgReportsPerActiveDay = computed(() => {
 .insights-shell {
   position: relative;
   z-index: 1;
-  max-width: 1100px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 16px 32px 80px;
+  padding: 16px 48px 80px;
+}
+
+@media (max-width: 1100px) {
+  .insights-shell { padding: 16px 32px 72px; }
 }
 
 @media (max-width: 720px) {
@@ -377,8 +386,22 @@ const avgReportsPerActiveDay = computed(() => {
 
 /* ---------- Masthead ---------- */
 .insights-head {
-  padding-top: 24px;
-  margin-bottom: 48px;
+  padding-top: 32px;
+  margin-bottom: 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 32px;
+}
+
+.insights-head-text { min-width: 0; }
+
+@media (max-width: 860px) {
+  .insights-head {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    gap: 20px;
+  }
 }
 
 .insights-eyebrow {
@@ -475,19 +498,35 @@ const avgReportsPerActiveDay = computed(() => {
 /* ---------- Hero ---------- */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 40px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 56px;
   align-items: stretch;
-  margin-bottom: 56px;
-  padding: 32px;
+  margin-bottom: 32px;
+  padding: 48px 56px;
   background: white;
-  border-radius: 24px;
-  box-shadow: 8px 8px 0 rgba(0, 95, 184, 0.08);
+  border-radius: 28px;
+  box-shadow: 10px 10px 0 rgba(0, 95, 184, 0.08);
   border: 1.5px solid #eef1f6;
 }
 
+@media (max-width: 1100px) {
+  .hero { padding: 36px 32px; gap: 40px; }
+}
+
 @media (max-width: 860px) {
-  .hero { grid-template-columns: 1fr; gap: 24px; padding: 24px; }
+  .hero { grid-template-columns: 1fr; gap: 24px; padding: 24px; margin-bottom: 24px; }
+}
+
+/* ---------- Lower grid (chart + ranking side by side) ---------- */
+.insights-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .insights-lower { grid-template-columns: 1fr; gap: 24px; }
 }
 
 .hero-label {
@@ -674,12 +713,12 @@ const avgReportsPerActiveDay = computed(() => {
 
 /* ---------- Chart ---------- */
 .chart-section {
-  margin-bottom: 56px;
-  padding: 28px;
+  padding: 28px 32px;
   background: white;
   border-radius: 24px;
   border: 1.5px solid #eef1f6;
   box-shadow: 8px 8px 0 rgba(0, 95, 184, 0.06);
+  min-width: 0;
 }
 
 .chart {
@@ -797,12 +836,20 @@ const avgReportsPerActiveDay = computed(() => {
 
 /* ---------- Ranking ---------- */
 .ranking-section {
-  margin-bottom: 40px;
-  padding: 28px;
+  padding: 28px 32px;
   background: white;
   border-radius: 24px;
   border: 1.5px solid #eef1f6;
   box-shadow: 8px 8px 0 rgba(0, 95, 184, 0.06);
+  min-width: 0;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  .ranking-section { position: static; max-height: none; }
 }
 
 .ranking {
