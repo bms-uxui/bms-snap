@@ -50,16 +50,6 @@ const periodLabel = computed(() => {
   return now.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
 })
 
-const periodOrdinal = computed(() => {
-  if (period.value === 'month') {
-    return new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase()
-  }
-  const start = periodStart.value
-  const firstJan = new Date(start.getFullYear(), 0, 1)
-  const week = Math.ceil((((start - firstJan) / 86400000) + firstJan.getDay() + 1) / 7)
-  return `WEEK ${String(week).padStart(2, '0')}`
-})
-
 const periodReports = computed(() => {
   const start = periodStart.value.getTime()
   return store.reports.filter(r => new Date(r.date).getTime() >= start)
@@ -150,7 +140,7 @@ const avgReportsPerActiveDay = computed(() => {
 </script>
 
 <template>
-  <div class="insights-page" :class="{ 'is-mounted': mounted }">
+  <div class="bg-[#fafafa] min-h-screen" :class="{ 'is-mounted': mounted }">
     <BaseHeader :show-border="false">
       <template #actions>
         <button
@@ -166,303 +156,178 @@ const avgReportsPerActiveDay = computed(() => {
       </template>
     </BaseHeader>
 
-    <div class="insights-bg-blob blob-1" aria-hidden="true"></div>
-    <div class="insights-bg-blob blob-2" aria-hidden="true"></div>
-
-    <main class="insights-shell">
-      <!-- Masthead -->
-      <header class="insights-head reveal" style="--delay: 0ms">
-        <div class="insights-head-text">
-          <div class="insights-eyebrow">
-            <span class="insights-eyebrow-dot"></span>
-            <span>Field Report · {{ periodOrdinal }}</span>
+    <div>
+      <!-- Hero Section -->
+      <section class="relative bg-(--secondary-brand) pt-16 pb-32 px-8 md:px-16 lg:px-[240px] overflow-visible rounded-b-[40px]">
+        <div class="insights-hero-decor hidden lg:block"></div>
+        <div class="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+          <div>
+            <p class="text-sm text-gray-500 mb-1">{{ periodLabel }}</p>
+            <h1 class="text-[32px] font-bold text-(--primary-brand) mb-1 leading-tight">พฤติกรรมการทุ่มเท</h1>
+            <p class="text-base text-gray-600">ภาพรวมโครงการของคุณในช่วงนี้</p>
           </div>
 
-          <h1 class="insights-title">
-            พฤติกรรม<br />
-            <span class="insights-title-accent">การทุ่มเท</span>
-          </h1>
-          <p class="insights-deck">{{ periodLabel }}</p>
+          <div class="insights-toggle" role="tablist">
+            <button
+              :class="['period-btn', { 'is-active': period === 'week' }]"
+              role="tab"
+              :aria-selected="period === 'week'"
+              @click="period = 'week'"
+            >รายสัปดาห์</button>
+            <button
+              :class="['period-btn', { 'is-active': period === 'month' }]"
+              role="tab"
+              :aria-selected="period === 'month'"
+              @click="period = 'month'"
+            >รายเดือน</button>
+          </div>
         </div>
-
-        <div class="insights-toggle" role="tablist">
-          <button
-            :class="['period-btn', { 'is-active': period === 'week' }]"
-            role="tab"
-            :aria-selected="period === 'week'"
-            @click="period = 'week'"
-          >รายสัปดาห์</button>
-          <button
-            :class="['period-btn', { 'is-active': period === 'month' }]"
-            role="tab"
-            :aria-selected="period === 'month'"
-            @click="period = 'month'"
-          >รายเดือน</button>
-        </div>
-      </header>
-
-      <!-- Hero stat -->
-      <section class="hero reveal" style="--delay: 120ms">
-        <div class="hero-main">
-          <div class="hero-label">§ 01 — รายงานประจำ{{ period === 'week' ? 'สัปดาห์' : 'เดือน' }}</div>
-          <div class="hero-figure">
-            <span class="hero-figure-num">{{ String(totalReports).padStart(2, '0') }}</span>
-            <span class="hero-figure-sup">ครั้ง</span>
-          </div>
-          <div class="hero-underline"></div>
-          <p class="hero-caption">
-            ค่าเฉลี่ย <strong>{{ avgReportsPerActiveDay }}</strong> รายงาน/วันที่ทำงาน
-          </p>
-        </div>
-
-        <aside class="hero-side">
-          <div class="hero-stat">
-            <div class="hero-stat-label">โครงการที่ทำ</div>
-            <div class="hero-stat-value">{{ String(uniqueProjectCount).padStart(2, '0') }}</div>
-          </div>
-          <div class="hero-stat">
-            <div class="hero-stat-label">วันทำงาน</div>
-            <div class="hero-stat-value">
-              {{ String(activeDays).padStart(2, '0') }}<span class="hero-stat-denom">/ {{ dayGrid.length }}</span>
-            </div>
-          </div>
-          <div class="hero-stat hero-stat-feature">
-            <div class="hero-stat-label">โครงการเด่น</div>
-            <div class="hero-stat-feature-name">{{ topProject?.name || '—' }}</div>
-            <div class="hero-stat-feature-meta">
-              {{ topProject ? `บันทึกไป ${topProject.count} ครั้ง` : 'รอรายงานแรกของช่วงนี้' }}
-            </div>
-          </div>
-        </aside>
       </section>
 
-      <!-- Chart + Ranking side by side on desktop -->
-      <div class="insights-lower">
-      <!-- Daily activity chart -->
-      <section class="chart-section reveal" style="--delay: 240ms">
-        <div class="section-head">
-          <span class="section-mark">§ 02</span>
-          <div>
-            <h2 class="section-title">จังหวะการทำงาน</h2>
-            <p class="section-sub">จำนวนโครงการที่ทำในแต่ละวัน</p>
+      <div class="max-w-full mx-auto px-8 md:px-16 lg:px-[240px]">
+        <!-- Stats Grid — overlaps hero just like MainApp -->
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 -mt-20 relative z-10">
+          <div class="stat-card stat-card-purple">
+            <p class="stat-label">รายงานที่บันทึก</p>
+            <p class="stat-value">{{ totalReports }}</p>
+            <p class="stat-unit">ครั้ง · เฉลี่ย {{ avgReportsPerActiveDay }}/วัน</p>
+            <svg class="stat-decor" viewBox="0 0 120 120" fill="none">
+              <circle cx="90" cy="30" r="14" fill="rgba(255,255,255,0.18)"/>
+              <circle cx="110" cy="60" r="8" fill="rgba(255,255,255,0.12)"/>
+              <circle cx="85" cy="95" r="20" fill="rgba(255,255,255,0.1)"/>
+            </svg>
           </div>
-        </div>
+          <div class="stat-card stat-card-green">
+            <p class="stat-label">โครงการที่ทำ</p>
+            <p class="stat-value">{{ uniqueProjectCount }}</p>
+            <p class="stat-unit">โครงการ</p>
+            <svg class="stat-decor" viewBox="0 0 120 120" fill="none">
+              <rect x="76" y="22" width="36" height="26" rx="6" fill="rgba(255,255,255,0.18)"/>
+              <rect x="84" y="56" width="28" height="26" rx="6" fill="rgba(255,255,255,0.14)"/>
+              <rect x="70" y="90" width="40" height="20" rx="6" fill="rgba(255,255,255,0.1)"/>
+            </svg>
+          </div>
+          <div class="stat-card stat-card-blue">
+            <p class="stat-label">วันทำงาน</p>
+            <p class="stat-value">{{ activeDays }}<span class="stat-value-sub">/{{ dayGrid.length }}</span></p>
+            <p class="stat-unit">วัน</p>
+            <svg class="stat-decor" viewBox="0 0 120 120" fill="none">
+              <rect x="74" y="28" width="38" height="8" rx="4" fill="rgba(255,255,255,0.2)"/>
+              <rect x="74" y="44" width="30" height="8" rx="4" fill="rgba(255,255,255,0.16)"/>
+              <rect x="74" y="60" width="34" height="8" rx="4" fill="rgba(255,255,255,0.13)"/>
+              <rect x="74" y="76" width="22" height="8" rx="4" fill="rgba(255,255,255,0.1)"/>
+              <rect x="74" y="92" width="32" height="8" rx="4" fill="rgba(255,255,255,0.08)"/>
+            </svg>
+          </div>
+          <div class="stat-card stat-card-orange">
+            <p class="stat-label">โครงการเด่น</p>
+            <p class="stat-value-name">{{ topProject?.name || '—' }}</p>
+            <p class="stat-unit">{{ topProject ? `บันทึก ${topProject.count} ครั้ง` : 'รอรายงานแรก' }}</p>
+            <svg class="stat-decor" viewBox="0 0 120 120" fill="none">
+              <polygon points="88,14 96,42 124,42 101,60 110,88 88,70 66,88 75,60 52,42 80,42" fill="rgba(255,255,255,0.16)"/>
+            </svg>
+          </div>
+        </section>
 
-        <div v-if="dayGrid.length === 0" class="empty">— ยังไม่มีข้อมูลในช่วงนี้ —</div>
-        <div v-else class="chart">
-          <div class="chart-axis">
-            <span>{{ maxDayCount }}</span>
-            <span>{{ Math.round(maxDayCount / 2) }}</span>
-            <span>0</span>
-          </div>
-          <div class="chart-bars">
-            <div
-              v-for="d in dayGrid"
-              :key="d.key"
-              class="bar-col"
-              :class="{ 'is-future': d.isFuture, 'is-today': d.isToday, 'is-empty': d.count === 0 }"
-            >
-              <div class="bar-value">{{ d.count > 0 ? d.count : '' }}</div>
-              <div class="bar-stack">
+        <!-- Lower two-column: chart + ranking -->
+        <div class="insights-lower mb-10">
+          <section class="panel chart-panel">
+            <header class="panel-head">
+              <div>
+                <h2 class="panel-title">จังหวะการทำงาน</h2>
+                <p class="panel-sub">จำนวนโครงการที่ทำในแต่ละวัน</p>
+              </div>
+            </header>
+
+            <div v-if="dayGrid.length === 0" class="panel-empty">— ยังไม่มีข้อมูลในช่วงนี้ —</div>
+            <div v-else class="chart">
+              <div class="chart-axis">
+                <span>{{ maxDayCount }}</span>
+                <span>{{ Math.round(maxDayCount / 2) }}</span>
+                <span>0</span>
+              </div>
+              <div class="chart-bars">
                 <div
-                  class="bar"
-                  :style="{ height: mounted ? `${barHeight(d.count)}%` : '4%' }"
-                ></div>
-              </div>
-              <div class="bar-label">
-                <span class="bar-weekday">{{ d.weekday }}</span>
-                <span class="bar-day">{{ d.dayNum }}</span>
+                  v-for="d in dayGrid"
+                  :key="d.key"
+                  class="bar-col"
+                  :class="{ 'is-future': d.isFuture, 'is-today': d.isToday, 'is-empty': d.count === 0 }"
+                >
+                  <div class="bar-value">{{ d.count > 0 ? d.count : '' }}</div>
+                  <div class="bar-stack">
+                    <div
+                      class="bar"
+                      :style="{ height: mounted ? `${barHeight(d.count)}%` : '4%' }"
+                    ></div>
+                  </div>
+                  <div class="bar-label">
+                    <span class="bar-weekday">{{ d.weekday }}</span>
+                    <span class="bar-day">{{ d.dayNum }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
 
-      <!-- Project ranking -->
-      <section class="ranking-section reveal" style="--delay: 360ms">
-        <div class="section-head">
-          <span class="section-mark">§ 03</span>
-          <div>
-            <h2 class="section-title">การจัดอันดับโครงการ</h2>
-            <p class="section-sub">เรียงจากที่บันทึกบ่อยที่สุด</p>
-          </div>
-        </div>
+          <section class="panel ranking-panel">
+            <header class="panel-head">
+              <div>
+                <h2 class="panel-title">การจัดอันดับโครงการ</h2>
+                <p class="panel-sub">เรียงจากที่บันทึกบ่อยที่สุด</p>
+              </div>
+            </header>
 
-        <div v-if="projectBreakdown.length === 0" class="empty">
-          ยังไม่มีโครงการในช่วงนี้ · เริ่มบันทึกรายงานเพื่อเห็นภาพ
+            <div v-if="projectBreakdown.length === 0" class="panel-empty">
+              ยังไม่มีโครงการในช่วงนี้ · เริ่มบันทึกรายงานเพื่อเห็นภาพ
+            </div>
+            <ol v-else class="ranking">
+              <li
+                v-for="(p, i) in projectBreakdown"
+                :key="p.id"
+                class="rank-row"
+                :style="{ '--bar-width': p.percent + '%', '--reveal-delay': (i * 60) + 'ms' }"
+              >
+                <span class="rank-index">{{ String(i + 1).padStart(2, '0') }}</span>
+                <div class="rank-logo">
+                  <img v-if="p.meta?.logoUrl" :src="p.meta.logoUrl" :alt="p.name" />
+                  <IconFolderOpen v-else size="18" color="var(--secondary-text)" />
+                </div>
+                <div class="rank-body">
+                  <div class="rank-head">
+                    <span class="rank-name">{{ p.name }}</span>
+                    <span class="rank-count">
+                      <strong>{{ p.count }}</strong>
+                      <span class="rank-count-label">ครั้ง</span>
+                    </span>
+                  </div>
+                  <div class="rank-bar">
+                    <div class="rank-bar-fill"></div>
+                  </div>
+                </div>
+              </li>
+            </ol>
+          </section>
         </div>
-        <ol v-else class="ranking">
-          <li
-            v-for="(p, i) in projectBreakdown"
-            :key="p.id"
-            class="rank-row"
-            :style="{ '--bar-width': p.percent + '%', '--reveal-delay': (i * 60) + 'ms' }"
-          >
-            <span class="rank-index">{{ String(i + 1).padStart(2, '0') }}</span>
-            <div class="rank-logo">
-              <img v-if="p.meta?.logoUrl" :src="p.meta.logoUrl" :alt="p.name" />
-              <IconFolderOpen v-else size="18" color="var(--secondary-text)" />
-            </div>
-            <div class="rank-body">
-              <div class="rank-head">
-                <span class="rank-name">{{ p.name }}</span>
-                <span class="rank-count">
-                  <strong>{{ p.count }}</strong>
-                  <span class="rank-count-label">× ทำงาน</span>
-                </span>
-              </div>
-              <div class="rank-bar">
-                <div class="rank-bar-fill"></div>
-              </div>
-            </div>
-          </li>
-        </ol>
-      </section>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.insights-page {
-  min-height: 100vh;
-  background: #fafafa;
-  color: var(--primary-text, #1e1e1e);
-  font-family: 'Noto Sans Thai UI', 'Google Sans', 'Google Sans Text', -apple-system, BlinkMacSystemFont, sans-serif;
-  position: relative;
-  overflow-x: hidden;
-}
-
-/* Soft ambient blobs — match home page's friendly feel */
-.insights-bg-blob {
-  position: fixed;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.55;
-}
-
-.insights-bg-blob.blob-1 {
-  width: 520px; height: 520px;
-  top: -160px; right: -120px;
-  background: radial-gradient(circle, rgba(196, 226, 255, 0.9) 0%, rgba(196, 226, 255, 0) 70%);
-}
-
-.insights-bg-blob.blob-2 {
-  width: 420px; height: 420px;
-  bottom: -160px; left: -120px;
-  background: radial-gradient(circle, rgba(244, 116, 81, 0.22) 0%, rgba(244, 116, 81, 0) 70%);
-}
-
-.insights-shell {
-  position: relative;
-  z-index: 1;
-  max-width: 1360px;
-  margin: 0 auto;
-  padding: 16px 48px 80px;
-}
-
-@media (max-width: 1100px) {
-  .insights-shell { padding: 16px 32px 72px; }
-}
-
-@media (max-width: 720px) {
-  .insights-shell { padding: 8px 20px 64px; }
-}
-
-/* ---------- Entrance reveal ---------- */
-.reveal {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.65s cubic-bezier(.22,.61,.36,1) var(--delay, 0ms),
-              transform 0.65s cubic-bezier(.22,.61,.36,1) var(--delay, 0ms);
-}
-
-.is-mounted .reveal {
-  opacity: 1;
-  transform: none;
-}
-
-/* ---------- Masthead ---------- */
-.insights-head {
-  padding-top: 32px;
-  margin-bottom: 56px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 32px;
-}
-
-.insights-head-text { min-width: 0; }
-
-@media (max-width: 860px) {
-  .insights-head {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-    gap: 20px;
-  }
-}
-
-.insights-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: var(--secondary-brand, #c4e2ff);
-  color: var(--primary-brand, #005FB8);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  margin-bottom: 24px;
-}
-
-.insights-eyebrow-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--primary-brand, #005FB8);
-  box-shadow: 0 0 0 4px rgba(0, 95, 184, 0.2);
-  animation: dotPulse 2.4s ease-in-out infinite;
-}
-
-@keyframes dotPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.15); opacity: 0.7; }
-}
-
-.insights-title {
-  font-family: 'Google Sans', 'Noto Sans Thai UI', sans-serif;
-  font-size: clamp(2.6rem, 7vw, 5rem);
-  font-weight: 700;
-  line-height: 0.98;
-  letter-spacing: -0.02em;
-  color: #194987;
-  margin: 0;
-}
-
-.insights-title-accent {
-  color: var(--primary-brand, #005FB8);
-  position: relative;
-  display: inline-block;
-}
-
-.insights-title-accent::after {
-  content: '';
+/* Decorative accent in hero, right edge */
+.insights-hero-decor {
   position: absolute;
-  left: 0; right: 0; bottom: 0.1em;
-  height: 0.18em;
-  background: var(--secondary-brand, #c4e2ff);
-  z-index: -1;
-  border-radius: 4px;
+  right: 240px;
+  bottom: 0;
+  width: 22%;
+  height: 70%;
+  background-image:
+    radial-gradient(circle at 30% 30%, rgba(0, 95, 184, 0.16) 0, transparent 50%),
+    radial-gradient(circle at 70% 60%, rgba(244, 116, 81, 0.18) 0, transparent 55%);
+  filter: blur(2px);
 }
 
-.insights-deck {
-  font-size: 1.05rem;
-  color: var(--secondary-text, #5f6368);
-  margin: 14px 0 28px;
-}
-
+/* ---------- Period toggle ---------- */
 .insights-toggle {
   display: inline-flex;
   gap: 4px;
@@ -470,6 +335,7 @@ const avgReportsPerActiveDay = computed(() => {
   background: white;
   border: 1.5px solid #e5e7eb;
   border-radius: 999px;
+  align-self: flex-start;
 }
 
 .period-btn {
@@ -495,29 +361,88 @@ const avgReportsPerActiveDay = computed(() => {
   box-shadow: 0 2px 6px rgba(0, 95, 184, 0.25);
 }
 
-/* ---------- Hero ---------- */
-.hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  gap: 56px;
-  align-items: stretch;
-  margin-bottom: 32px;
-  padding: 48px 56px;
-  background: white;
-  border-radius: 28px;
-  box-shadow: 10px 10px 0 rgba(0, 95, 184, 0.08);
-  border: 1.5px solid #eef1f6;
+/* ---------- Stat Cards (match MainApp pattern) ---------- */
+.stat-card {
+  position: relative;
+  border-radius: 24px;
+  padding: 24px;
+  overflow: hidden;
+  min-height: 170px;
+  color: white;
+  transition: transform 0.25s ease;
 }
 
-@media (max-width: 1100px) {
-  .hero { padding: 36px 32px; gap: 40px; }
+.is-mounted .stat-card {
+  animation: statRise 0.6s cubic-bezier(.22,.61,.36,1) both;
 }
 
-@media (max-width: 860px) {
-  .hero { grid-template-columns: 1fr; gap: 24px; padding: 24px; margin-bottom: 24px; }
+.stat-card:nth-child(1) { animation-delay: 0ms; }
+.stat-card:nth-child(2) { animation-delay: 80ms; }
+.stat-card:nth-child(3) { animation-delay: 160ms; }
+.stat-card:nth-child(4) { animation-delay: 240ms; }
+
+@keyframes statRise {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* ---------- Lower grid (chart + ranking side by side) ---------- */
+.stat-card-purple { background: #8b6bae; }
+.stat-card-green  { background: #5bab7b; }
+.stat-card-blue   { background: var(--accent-3, #3467d5); }
+.stat-card-orange { background: #f47451; }
+
+.stat-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-family: 'Google Sans', sans-serif;
+  font-size: 2.6rem;
+  font-weight: 700;
+  margin-top: 10px;
+  line-height: 1;
+  font-feature-settings: 'lnum', 'tnum';
+}
+
+.stat-value-sub {
+  font-size: 1.1rem;
+  font-weight: 500;
+  opacity: 0.8;
+  margin-left: 2px;
+}
+
+.stat-value-name {
+  font-family: 'Google Sans', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 16px;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.stat-unit {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 6px;
+}
+
+.stat-decor {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 120px;
+  height: 120px;
+  pointer-events: none;
+}
+
+/* ---------- Lower grid ---------- */
 .insights-lower {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
@@ -526,201 +451,52 @@ const avgReportsPerActiveDay = computed(() => {
 }
 
 @media (max-width: 1024px) {
-  .insights-lower { grid-template-columns: 1fr; gap: 24px; }
+  .insights-lower { grid-template-columns: 1fr; }
 }
 
-.hero-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--secondary-text, #5f6368);
-  margin-bottom: 20px;
+.panel {
+  background: white;
+  border-radius: 24px;
+  padding: 28px 32px;
+  border: 1.5px solid #eef1f6;
+  min-width: 0;
 }
 
-.hero-figure {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  line-height: 0.9;
+@media (max-width: 720px) {
+  .panel { padding: 22px; }
 }
 
-.hero-figure-num {
-  font-family: 'Google Sans', sans-serif;
-  font-weight: 700;
-  font-size: clamp(6.5rem, 18vw, 13rem);
-  letter-spacing: -0.06em;
-  color: #194987;
-  font-feature-settings: 'lnum', 'tnum';
-}
-
-.hero-figure-sup {
-  font-weight: 500;
-  font-size: 1.3rem;
-  color: var(--primary-brand, #005FB8);
-  padding-top: 24px;
-}
-
-.hero-underline {
-  width: 64%;
-  height: 10px;
-  background: linear-gradient(90deg, var(--primary-brand, #005FB8), var(--accent-5, #87CCD4));
-  margin-top: 14px;
-  border-radius: 999px;
-  transform-origin: left;
-  animation: lineGrow 0.9s 0.4s cubic-bezier(.22,.61,.36,1) both;
-}
-
-@keyframes lineGrow {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-.hero-caption {
-  font-size: 1rem;
-  color: var(--secondary-text, #5f6368);
-  margin: 20px 0 0;
-}
-
-.hero-caption strong {
-  font-weight: 700;
-  color: var(--primary-text, #1e1e1e);
-  padding: 2px 8px;
-  background: var(--secondary-brand, #c4e2ff);
-  border-radius: 6px;
-  margin: 0 2px;
-}
-
-.hero-side {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  justify-content: flex-end;
-  padding-left: 32px;
-  border-left: 1.5px dashed #eef1f6;
-}
-
-@media (max-width: 860px) {
-  .hero-side { padding-left: 0; border-left: none; padding-top: 20px; border-top: 1.5px dashed #eef1f6; }
-}
-
-.hero-stat {
+.panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #f1f3f7;
-}
-
-.hero-stat:not(.hero-stat-feature):last-of-type { border-bottom: none; padding-bottom: 0; }
-
-.hero-stat-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--secondary-text, #5f6368);
-}
-
-.hero-stat-value {
-  font-family: 'Google Sans', sans-serif;
-  font-weight: 700;
-  font-size: 2.4rem;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #194987;
-  font-feature-settings: 'lnum', 'tnum';
-}
-
-.hero-stat-denom {
-  font-weight: 500;
-  font-size: 1rem;
-  color: var(--secondary-text, #5f6368);
-  margin-left: 4px;
-}
-
-.hero-stat-feature {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 16px 18px;
-  background: linear-gradient(135deg, var(--primary-brand, #005FB8), #194987);
-  color: white;
-  border-radius: 16px;
-  border: none;
-  box-shadow: 6px 6px 0 rgba(0, 95, 184, 0.14);
-  margin-top: 8px;
-}
-
-.hero-stat-feature .hero-stat-label {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.hero-stat-feature-name {
-  font-weight: 700;
-  font-size: 1.2rem;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-}
-
-.hero-stat-feature-meta {
-  font-size: 0.78rem;
-  font-weight: 500;
-  opacity: 0.88;
-}
-
-/* ---------- Section heads ---------- */
-.section-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
   margin-bottom: 22px;
 }
 
-.section-mark {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--primary-brand, #005FB8);
-  letter-spacing: 0.08em;
-  padding-top: 4px;
-  font-feature-settings: 'lnum';
-}
-
-.section-title {
+.panel-title {
   font-family: 'Google Sans', sans-serif;
+  font-size: 1.35rem;
   font-weight: 700;
-  font-size: clamp(1.5rem, 3.2vw, 2rem);
-  letter-spacing: -0.015em;
-  line-height: 1.1;
   color: #194987;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
-.section-sub {
-  font-size: 0.9rem;
+.panel-sub {
+  font-size: 0.88rem;
   color: var(--secondary-text, #5f6368);
   margin: 4px 0 0;
 }
 
-.empty {
+.panel-empty {
+  text-align: center;
+  padding: 36px 0;
   font-size: 0.95rem;
   color: var(--secondary-text, #5f6368);
-  padding: 32px 0;
-  text-align: center;
 }
 
 /* ---------- Chart ---------- */
-.chart-section {
-  padding: 28px 32px;
-  background: white;
-  border-radius: 24px;
-  border: 1.5px solid #eef1f6;
-  box-shadow: 8px 8px 0 rgba(0, 95, 184, 0.06);
-  min-width: 0;
-}
-
 .chart {
   display: grid;
   grid-template-columns: 40px 1fr;
@@ -779,12 +555,11 @@ const avgReportsPerActiveDay = computed(() => {
 }
 
 .bar {
-  width: clamp(16px, 3.8vw, 34px);
+  width: clamp(16px, 3.5vw, 32px);
   min-height: 4px;
   background: linear-gradient(180deg, var(--primary-brand, #005FB8), #194987);
   border-radius: 8px 8px 0 0;
-  transition: height 0.9s cubic-bezier(.22,.61,.36,1);
-  transition-delay: calc(var(--delay, 0ms) + 200ms);
+  transition: height 0.9s cubic-bezier(.22,.61,.36,1) 0.2s;
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 95, 184, 0.15);
 }
@@ -830,59 +605,33 @@ const avgReportsPerActiveDay = computed(() => {
   font-feature-settings: 'lnum', 'tnum';
 }
 
-.bar-col.is-today .bar-day {
-  color: var(--accent-4, #f47451);
-}
+.bar-col.is-today .bar-day { color: var(--accent-4, #f47451); }
 
 /* ---------- Ranking ---------- */
-.ranking-section {
-  padding: 28px 32px;
-  background: white;
-  border-radius: 24px;
-  border: 1.5px solid #eef1f6;
-  box-shadow: 8px 8px 0 rgba(0, 95, 184, 0.06);
-  min-width: 0;
-  position: sticky;
-  top: 24px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-}
-
-@media (max-width: 1024px) {
-  .ranking-section { position: static; max-height: none; }
-}
-
 .ranking {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
 }
 
 .rank-row {
   display: grid;
-  grid-template-columns: 40px 44px 1fr;
+  grid-template-columns: 36px 44px 1fr;
   align-items: center;
-  gap: 16px;
-  padding: 16px 12px;
-  border-radius: 14px;
-  transition: background 0.2s;
-}
-
-.rank-row + .rank-row {
+  gap: 14px;
+  padding: 14px 6px;
   border-top: 1px solid #f1f3f7;
+  transition: background 0.15s;
 }
 
-.rank-row:hover {
-  background: #f9fbfe;
-}
+.rank-row:first-child { border-top: none; }
+
+.rank-row:hover { background: #f9fbfe; border-radius: 10px; }
 
 .rank-index {
   font-family: 'Google Sans', sans-serif;
   font-weight: 700;
-  font-size: 1.4rem;
+  font-size: 1.3rem;
   color: var(--primary-brand, #005FB8);
   line-height: 1;
   text-align: center;
@@ -909,13 +658,13 @@ const avgReportsPerActiveDay = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 16px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
 .rank-name {
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--primary-text, #1e1e1e);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -925,24 +674,22 @@ const avgReportsPerActiveDay = computed(() => {
 .rank-count {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
 .rank-count strong {
   font-family: 'Google Sans', sans-serif;
   font-weight: 700;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   color: var(--primary-brand, #005FB8);
   line-height: 1;
   font-feature-settings: 'lnum', 'tnum';
 }
 
 .rank-count-label {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   color: var(--secondary-text, #5f6368);
 }
 
